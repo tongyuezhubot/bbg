@@ -1599,16 +1599,18 @@ function bodyPass(ctx, n, g, cx, base, time, mono) {
   if (!mono) {                                   // 五官只在正式那遍画
     const blink = ((time * 1000 + n.seed * 977) % 4200) < 130;
     // smallEyes：本来就只有 1px 高，眨眼时干脆闭成一条缝
-    const eh = n.smallEyes ? 1 : blink ? 1 : 2, ey = hy + 4 + (blink ? 1 : 0);
+    // bigEyes：睁眼时宽 2 高 3，比常规大一圈；眨眼一律压回一条缝
+    const eh = n.smallEyes ? 1 : blink ? 1 : (n.bigEyes ? 3 : 2), ey = hy + 4 + (blink ? 1 : 0);
+    const ew = n.bigEyes && !blink ? 2 : 1, elx = n.bigEyes ? cx - 3 : cx - 2;
     if (n.eyeShadow && n.dir !== "n") {         // 青绿眼影
       ctx.fillStyle = n.eyeShadow;
       if (n.dir !== "e") ctx.fillRect(cx - 3, ey - 1, 2, 2);
       if (n.dir !== "w") ctx.fillRect(cx + 2, ey - 1, 2, 2);
     }
     ctx.fillStyle = "#2a2118";
-    if (n.dir === "s") { ctx.fillRect(cx - 2, ey, 1, eh); ctx.fillRect(cx + 2, ey, 1, eh); }
-    else if (n.dir === "e") { ctx.fillRect(cx + 2, ey, 1, eh); }
-    else if (n.dir === "w") { ctx.fillRect(cx - 2, ey, 1, eh); }
+    if (n.dir === "s") { ctx.fillRect(elx, ey, ew, eh); ctx.fillRect(cx + 2, ey, ew, eh); }
+    else if (n.dir === "e") { ctx.fillRect(cx + 2, ey, ew, eh); }
+    else if (n.dir === "w") { ctx.fillRect(elx, ey, ew, eh); }
     if (n.lashes && !blink && n.dir !== "n") {
       ctx.fillStyle = "#2a2118";
       if (n.dir !== "e") ctx.fillRect(cx - 3, ey - 1, 1, 1);
@@ -1814,6 +1816,11 @@ const CAST = {
     skin: "#f7dcc0", hair: "#5c4636", hairStyle: "bob", lashes: true,
     shirt: "#7fb2c4", pants: "#3d4a63", postDX: -1,
   },
+  baibai: {                         // 白白：仿雪兔，比雪兔矮、大眼睛、过肩长发、店员
+    name: "白白", role: "clerk", build: "tallLean", resident: true,
+    skin: "#f9e2ce", hair: "#7a6450", hairStyle: "long", lashes: true, bigEyes: true,
+    shirt: "#dfe3ea", pants: "#4a5570", postDX: 1,
+  },
   lanwen: {                         // lanwen：蜘蛛侠战衣但不戴面具、瘦、中分
     name: "lanwen", role: "regular", build: "tallLean", resident: true,
     skin: "#e8bd90", hair: "#2b2320", hairStyle: "middle",
@@ -1846,6 +1853,7 @@ function makePerson(castKey) {
     glassColor: c ? c.glassColor || null : null,
     glassThin: !!(c && c.glassThin),
     smallEyes: !!(c && c.smallEyes),
+    bigEyes: !!(c && c.bigEyes),
     faceTaper: !!(c && c.faceTaper),
     spider: !!(c && c.spider),
     postDX: c && c.postDX !== undefined ? c.postDX : 0,
@@ -2266,7 +2274,7 @@ const motes = Array.from({ length: reduce ? 0 : 34 }, () => ({
 const SAVE_KEY = "bbg-boardgame-v3";
 const PERSON_KEYS = ["castKey", "name", "staff", "role", "build", "collar", "apron",
   "bag", "laptop", "cap", "hairStyle", "skin", "hair", "shirt", "pants", "style",
-  "hat", "hatColor", "lashes", "glasses", "glassColor", "glassThin", "smallEyes",
+  "hat", "hatColor", "lashes", "glasses", "glassColor", "glassThin", "smallEyes", "bigEyes",
   "faceTaper", "spider", "postDX",
   "eyeShadow", "skirt", "seed", "px", "py", "dir", "state", "timer", "emote", "emoteT",
   "sitting", "lying", "browseAt", "pickedGame", "lounged", "leaving", "task", "stockDir"];
@@ -2330,7 +2338,7 @@ function loadState() {
       const c = CAST[n.castKey], look = makePerson(n.castKey);
       for (const k of ["name", "role", "staff", "build", "collar", "apron", "bag",
                        "laptop", "cap", "hairStyle", "skin", "hair", "shirt", "pants",
-                       "style", "lashes", "glasses", "glassColor", "glassThin", "smallEyes",
+                       "style", "lashes", "glasses", "glassColor", "glassThin", "smallEyes", "bigEyes",
                        "faceTaper", "spider", "postDX", "eyeShadow", "skirt", "hatColor"]) n[k] = look[k];
       if (!c.cap) n.hat = false;
       n._hairHi = null; n._hairSh = null;
@@ -2371,6 +2379,7 @@ const RESIDENTS = [
   ["coder",  20, 17, "stretch"],
   ["bear",   STAFF_POST.x, STAFF_POST.y, "counter"],
   ["rabbit", STAFF_POST.x - 1, STAFF_POST.y, "counter"],
+  ["baibai", STAFF_POST.x + 1, STAFF_POST.y, "counter"],
   ["lanwen", 22, 17, ""],
 ];
 RESIDENTS.forEach(r => spawnResident(...r));
