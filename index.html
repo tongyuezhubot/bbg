@@ -1270,6 +1270,44 @@ const HAIR_SPR = {
         "..HHHHHHHHH..",
         "..HHHHHHHHH.."],
   },
+  wavy: {                                   // 白白：中分蓬松、过肩、外缘做波浪、刘海分两撮框脸
+    s: ["....HHHHH....",
+        "..HHhhhhhHH..",
+        ".HHHHHHHHHHH.",
+        ".HHHHH.HHHHH.",
+        ".HHhH...HhHH.",
+        "HHd.......dHH",
+        "HHH.......HHH",
+        ".HHd.....dHH.",
+        "HHH.......HHH",
+        ".HH.......HH.",
+        ".Hd.......dH.",
+        "..HH.....HH.."],
+    e: ["....HHHHH....",
+        "..HHhhhhhHH..",
+        ".HHHHHHHHHHH.",
+        ".HHHHH.HHHHH.",
+        "HHHhH...HhHH.",
+        "HHd.......dHH",
+        "HHHH......HHH",
+        "HHHd.....dHH.",
+        "HHHH......HHH",
+        "HHH.......HH.",
+        ".Hd.......dH.",
+        "..HH.....HH.."],
+    n: ["....HHHHH....",
+        "..HHhhhhhHH..",
+        ".HHHHHHHHHHH.",
+        ".HHHHHHHHHHH.",
+        ".HHdHHHHHdHH.",
+        "HHHHHHHHHHHHH",
+        "HHHdHHHHHdHHH",
+        ".HHHHHHHHHHH.",
+        "HHHHHHHHHHHHH",
+        ".HHHHHHHHHHH.",
+        ".HHdHHHHHdHH.",
+        "..HHHHHHHHH.."],
+  },
   bob: {                                    // 齐耳短发：比 medium 再长一截，下摆微微外扩
     s: ["....HHHHH....",
         "...hhhhhhh...",
@@ -1528,6 +1566,17 @@ function bodyPass(ctx, n, g, cx, base, time, mono) {
       ctx.fillRect(cx - 2, bodyBase - torsoH + 1, 1, torsoH - 5);
       ctx.fillRect(cx + 2, bodyBase - torsoH + 1, 1, torsoH - 5);
     }
+    if (n.hoodie) {                            // 卫衣：敞口露出米色内搭，领口两侧堆一卷帽子，中间一条拉链
+      const inner = n.inner || "#e7ddc8";
+      ctx.fillStyle = inner;                     // 内搭：胸口一块米色，两肩各留一点
+      ctx.fillRect(cx - 1, bodyBase - torsoH + 1, 3, 3);
+      ctx.fillRect(cx, bodyBase - torsoH + 4, 1, 2);
+      ctx.fillStyle = "rgba(0,0,0,.20)";         // 拉链门襟
+      ctx.fillRect(cx, bodyBase - torsoH + 6, 1, torsoH - 7);
+      ctx.fillStyle = lighten(n.shirt, -20);     // 帽卷：脖子两侧各一小坨
+      ctx.fillRect(cx - 3, bodyBase - torsoH, 2, 2); ctx.fillRect(cx + 2, bodyBase - torsoH, 2, 2);
+      ctx.fillStyle = "rgba(255,255,255,.10)"; ctx.fillRect(cx - hw + 1, bodyBase - 4, hw * 2 - 1, 1);
+    }
   }
   if (n.bag) {                                   // 斜挎带 + 包
     F("#4a3728");
@@ -1608,12 +1657,12 @@ function bodyPass(ctx, n, g, cx, base, time, mono) {
       if (n.dir !== "e") ctx.fillRect(cx - 3, ey - 1, 2, 2);
       if (n.dir !== "w") ctx.fillRect(cx + 2, ey - 1, 2, 2);
     }
-    ctx.fillStyle = "#2a2118";
+    ctx.fillStyle = n.eyeColor || "#2a2118";
     if (n.dir === "s") { ctx.fillRect(elx, ey, ew, eh); ctx.fillRect(cx + 2, ey, ew, eh); }
     else if (n.dir === "e") { ctx.fillRect(cx + 2, ey, ew, eh); }
     else if (n.dir === "w") { ctx.fillRect(elx, ey, ew, eh); }
-    if (big) {                                  // 外眼角点一颗高光，读起来是水汪汪大眼（内侧留实黑，眼才不发灰）
-      ctx.fillStyle = "rgba(255,255,255,.7)";
+    if (big) {                                  // 大眼太小，高光占一半会发灰 —— 只在上沿点半透明一线提亮
+      ctx.fillStyle = "rgba(255,255,255,.32)";
       if (n.dir !== "e") ctx.fillRect(cx - 3, ey, 1, 1);
       if (n.dir !== "w") ctx.fillRect(cx + 3, ey, 1, 1);
     }
@@ -1822,10 +1871,11 @@ const CAST = {
     skin: "#f7dcc0", hair: "#5c4636", hairStyle: "bob", lashes: true,
     shirt: "#7fb2c4", pants: "#3d4a63", postDX: -1,
   },
-  baibai: {                         // 白白：仿雪兔，比雪兔矮、大眼睛、过肩长发、店员
+  baibai: {                         // 白白：暖棕中分蓬松过肩卷发、棕色大眼、棕卫衣配米色内搭、店员
     name: "白白", role: "clerk", build: "tallLean", resident: true,
-    skin: "#f9e2ce", hair: "#7a6450", hairStyle: "long", lashes: true, bigEyes: true,
-    shirt: "#dfe3ea", pants: "#4a5570", postDX: 1,
+    skin: "#eec39a", hair: "#5b3d27", hairStyle: "wavy", lashes: true,
+    bigEyes: true, eyeColor: "#3a2410",
+    shirt: "#5c3f2b", pants: "#3a2c22", hoodie: true, inner: "#e7ddc8", postDX: 1,
   },
   lanwen: {                         // lanwen：蜘蛛侠战衣但不戴面具、瘦、中分
     name: "lanwen", role: "regular", build: "tallLean", resident: true,
@@ -1860,6 +1910,9 @@ function makePerson(castKey) {
     glassThin: !!(c && c.glassThin),
     smallEyes: !!(c && c.smallEyes),
     bigEyes: !!(c && c.bigEyes),
+    eyeColor: c ? c.eyeColor || null : null,
+    hoodie: !!(c && c.hoodie),
+    inner: c ? c.inner || null : null,
     faceTaper: !!(c && c.faceTaper),
     spider: !!(c && c.spider),
     postDX: c && c.postDX !== undefined ? c.postDX : 0,
@@ -2285,7 +2338,7 @@ const SAVE_KEY = "bbg-boardgame-v3";
 const PERSON_KEYS = ["castKey", "name", "staff", "role", "build", "collar", "apron",
   "bag", "laptop", "cap", "hairStyle", "skin", "hair", "shirt", "pants", "style",
   "hat", "hatColor", "lashes", "glasses", "glassColor", "glassThin", "smallEyes", "bigEyes",
-  "faceTaper", "spider", "postDX",
+  "eyeColor", "hoodie", "inner", "faceTaper", "spider", "postDX",
   "eyeShadow", "skirt", "seed", "px", "py", "dir", "state", "timer", "emote", "emoteT",
   "sitting", "lying", "browseAt", "pickedGame", "lounged", "leaving", "task", "stockDir"];
 
@@ -2349,7 +2402,7 @@ function loadState() {
       for (const k of ["name", "role", "staff", "build", "collar", "apron", "bag",
                        "laptop", "cap", "hairStyle", "skin", "hair", "shirt", "pants",
                        "style", "lashes", "glasses", "glassColor", "glassThin", "smallEyes", "bigEyes",
-                       "faceTaper", "spider", "postDX", "eyeShadow", "skirt", "hatColor"]) n[k] = look[k];
+                       "eyeColor", "hoodie", "inner", "faceTaper", "spider", "postDX", "eyeShadow", "skirt", "hatColor"]) n[k] = look[k];
       if (!c.cap) n.hat = false;
       n._hairHi = null; n._hairSh = null;
     }
