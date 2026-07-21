@@ -1599,9 +1599,10 @@ function bodyPass(ctx, n, g, cx, base, time, mono) {
   if (!mono) {                                   // 五官只在正式那遍画
     const blink = ((time * 1000 + n.seed * 977) % 4200) < 130;
     // smallEyes：本来就只有 1px 高，眨眼时干脆闭成一条缝
-    // bigEyes：睁眼时宽 2 高 3，比常规大一圈；眨眼一律压回一条缝
-    const eh = n.smallEyes ? 1 : blink ? 1 : (n.bigEyes ? 3 : 2), ey = hy + 4 + (blink ? 1 : 0);
-    const ew = n.bigEyes && !blink ? 2 : 1, elx = n.bigEyes ? cx - 3 : cx - 2;
+    // bigEyes：睁眼时宽 2 高 2（常规是 1 宽），眼里再点一颗高光；眨眼压回一条缝
+    const big = n.bigEyes && !blink;
+    const eh = n.smallEyes ? 1 : blink ? 1 : 2, ey = hy + 4 + (blink ? 1 : 0);
+    const ew = big ? 2 : 1, elx = big ? cx - 3 : cx - 2;   // 左眼靠外扩一格，右眼往内扩
     if (n.eyeShadow && n.dir !== "n") {         // 青绿眼影
       ctx.fillStyle = n.eyeShadow;
       if (n.dir !== "e") ctx.fillRect(cx - 3, ey - 1, 2, 2);
@@ -1611,6 +1612,11 @@ function bodyPass(ctx, n, g, cx, base, time, mono) {
     if (n.dir === "s") { ctx.fillRect(elx, ey, ew, eh); ctx.fillRect(cx + 2, ey, ew, eh); }
     else if (n.dir === "e") { ctx.fillRect(cx + 2, ey, ew, eh); }
     else if (n.dir === "w") { ctx.fillRect(elx, ey, ew, eh); }
+    if (big) {                                  // 外眼角点一颗高光，读起来是水汪汪大眼（内侧留实黑，眼才不发灰）
+      ctx.fillStyle = "rgba(255,255,255,.7)";
+      if (n.dir !== "e") ctx.fillRect(cx - 3, ey, 1, 1);
+      if (n.dir !== "w") ctx.fillRect(cx + 3, ey, 1, 1);
+    }
     if (n.lashes && !blink && n.dir !== "n") {
       ctx.fillStyle = "#2a2118";
       if (n.dir !== "e") ctx.fillRect(cx - 3, ey - 1, 1, 1);
@@ -2212,11 +2218,15 @@ function updateStaff(n, dt) {
   }
   const busy = people.some(p => p.state === "atCounter" || p.state === "toCounter");
   const roll = Math.random();
-  if (busy || roll < .42) {
-    // 两个店员各站柜台的一格，别叠在一起（店长另占 +1）
-    if (goTo(n, STAFF_POST.x + (n.postDX || 0), STAFF_POST.y)) { n.task = "counter"; n.timer = ri(7, 15); }
+  if (busy) {
+    // 有客到柜台：回岗，站到人走；各占一格别叠在一起（店长另占 +1）
+    if (goTo(n, STAFF_POST.x + (n.postDX || 0), STAFF_POST.y)) { n.task = "counter"; n.timer = ri(4, 7); }
     else n.timer = 2;
-  } else if (roll < .72) {
+  } else if (roll < .14) {
+    // 空闲时偶尔回柜台瞄一眼，很快又走 —— 别杵着
+    if (goTo(n, STAFF_POST.x + (n.postDX || 0), STAFF_POST.y)) { n.task = "counter"; n.timer = ri(2, 4); }
+    else n.timer = 2;
+  } else if (roll < .60) {
     const t = rnd(TABLES);
     const c = rnd(t.chairs);
     if (goTo(n, c.x, c.y)) { n.task = "check"; n.timer = ri(4, 8); }
