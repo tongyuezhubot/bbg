@@ -3,7 +3,7 @@
 一个像素风的桌游店。整个店是一张 640×448 的 canvas，七位常驻角色各有各的作息，
 猫会自己在店里溜达，进度存在 localStorage 里，关掉网页再打开会接着演。
 
-**在线预览：** https://USERNAME.github.io/REPO/
+**在线预览：** https://tongyuezhubot.github.io/bbg/
 
 ## 常驻角色
 
