@@ -69,8 +69,27 @@
   .screen {
     border: 3px solid var(--frame); background: #241c14; padding: 6px;
     box-shadow: 0 14px 34px -14px var(--shadow); overflow: hidden;
+    position: relative;
   }
   canvas { display: block; width: 100%; height: auto; image-rendering: pixelated; image-rendering: crisp-edges; }
+
+  /* 点击地形图弹出的放大图层 */
+  .mapzoom {
+    position: absolute; inset: 0; z-index: 10;
+    display: flex; align-items: center; justify-content: center;
+    background: rgba(10, 7, 4, 0); opacity: 0; pointer-events: none;
+    transition: opacity .28s ease, background .28s ease;
+  }
+  .mapzoom.show { opacity: 1; pointer-events: auto; background: rgba(10, 7, 4, .8); cursor: zoom-out; }
+  .mapzoom img {
+    max-width: 86%; max-height: 86%;
+    border: 4px solid var(--frame); border-radius: 6px;
+    box-shadow: 0 16px 48px rgba(0, 0, 0, .6);
+    transform: scale(.15); opacity: .4;
+    transition: transform .34s cubic-bezier(.2, .9, .3, 1.25), opacity .34s ease;
+  }
+  .mapzoom.show img { transform: scale(1); opacity: 1; }
+  @media (prefers-reduced-motion: reduce) { .mapzoom, .mapzoom img { transition: opacity .12s ease; transform: none; } }
 
   @media (prefers-reduced-motion: reduce) { .openlamp i { animation: none; opacity: .9 } }
 </style>
@@ -243,7 +262,7 @@ const wallShelves = [];
 const addWallShelf = (x, y, h, dir) => { wallShelves.push({ x, y, h, dir }); box(x, y, 1, h); };
 addWallShelf(1, 2, 7, "w"); addWallShelf(1, 14, 5, "w");
 addWallShelf(13, 2, 11, "w");            // 包间内侧
-addWallShelf(38, 11, 6, "e");
+addWallShelf(38, 12, 4, "e");   // 缩短，给上方东墙电视让位
 
 // 柱子
 const PILLARS = [{ x: 31, y: 8, w: 3, h: 3 }];
@@ -256,33 +275,38 @@ const TABLES = [];
 function addTable(x, y, w, h, label) {
   const t = { x, y, w, h, label, chairs: [], game: null, rollT: 0, id: TABLES.length };
   box(x, y, w, h);
-  const a = Math.floor(w * .25), b = Math.floor(w * .75);
-  const c = Math.floor(h * .25), d = Math.floor(h * .75);
-  if (w >= h) {
-    for (const i of new Set([a, b])) {
-      t.chairs.push({ x: x + i, y: y - 1, dir: "s", by: null, t });
-      t.chairs.push({ x: x + i, y: y + h, dir: "n", by: null, t });
-    }
-  } else {
-    for (const j of new Set([c, d])) {
-      t.chairs.push({ x: x - 1, y: y + j, dir: "e", by: null, t });
-      t.chairs.push({ x: x + w, y: y + j, dir: "w", by: null, t });
+  const mx = x + Math.floor(w / 2), my = y + Math.floor(h / 2);   // 短边中点
+  const push = (cx, cy, dir) => t.chairs.push({ x: cx, y: cy, dir, by: null, t });
+  if (w === h) {                         // 方桌：四边各 1，共 4
+    push(mx, y - 1, "s"); push(mx, y + h, "n");
+    push(x - 1, my, "e"); push(x + w, my, "w");
+  } else {                               // 长桌：两条长边各 2、两条短边各 1，共 6
+    const two = n => [1, n - 2];
+    if (w > h) {                         // 横向：长边在上下
+      for (const i of two(w)) { push(x + i, y - 1, "s"); push(x + i, y + h, "n"); }
+      push(x - 1, my, "e"); push(x + w, my, "w");
+    } else {                             // 竖向：长边在左右
+      for (const j of two(h)) { push(x - 1, y + j, "e"); push(x + w, y + j, "w"); }
+      push(mx, y - 1, "s"); push(mx, y + h, "n");
     }
   }
   TABLES.push(t);
 }
-addTable(2, 4, 7, 2, "左上长桌");
-addTable(3, 9, 3, 5, "左墙桌");
-addTable(8, 9, 3, 5, "左中桌");
-addTable(15, 4, 3, 5, "包间大桌");
-addTable(22, 4, 5, 2, "北窗桌");
-addTable(22, 10, 4, 4, "中庭方桌");
-addTable(28, 13, 4, 3, "东厅一桌");
-addTable(34, 13, 4, 3, "东厅二桌");
-addTable(13, 18, 5, 3, "厅心长桌");
-addTable(21, 20, 5, 3, "南厅大桌");
-addTable(28, 19, 4, 3, "东南桌");
-addTable(35, 19, 3, 3, "角落桌");
+// 长桌 3×6（含旋转的 6×3）：长边各 2、短边各 1；方桌 3×3：四边各 1
+// 北窗桌（北侧小包间）保持 6×2 不变
+addTable(3, 4, 6, 3, "左上长桌");
+addTable(3, 9, 3, 6, "左墙桌");
+addTable(8, 9, 3, 6, "左中桌");
+addTable(15, 4, 3, 6, "包间大桌");
+addTable(21, 4, 6, 2, "北窗桌");
+addTable(13, 18, 6, 3, "厅心长桌");
+// 右边东厅六张：全为 3×3 方桌，排成 2×3 网格并对齐
+addTable(22, 12, 3, 3, "中庭方桌");
+addTable(27, 12, 3, 3, "东厅一桌");
+addTable(32, 12, 3, 3, "东厅二桌");
+addTable(22, 17, 3, 3, "南厅大桌");
+addTable(27, 17, 3, 3, "东南桌");
+addTable(32, 17, 3, 3, "角落桌");
 
 /* ── 沙发 / 电视 / 收银 ── */
 const SOFAS = [];
@@ -296,10 +320,12 @@ function addSofa(x, y, len, dir) {                   // dir = 坐者朝向；东
 }
 addSofa(3, 20, 4, "s");        // 正对电视
 addSofa(9, 21, 4, "w");        // 竖排，侧对电视，与上一张成 L
-addSofa(35, 9, 4, "s");        // 东厅休息长凳
+addSofa(34, 8, 3, "e");        // 东厅角落，竖排朝东、靠着灰色柱子，正对东墙电视
 
 const TV = { x: 3, y: 26, w: 4 };  box(TV.x, TV.y, TV.w, 1);
-const COFFEE = { x: 6, y: 23, w: 2 }; box(COFFEE.x, COFFEE.y, COFFEE.w, 1);
+const TV2 = { x: 38, y: 8, h: 3 };  box(TV2.x, TV2.y, 1, TV2.h);   // 挂在东墙、屏幕朝西，与沙发对齐
+const MAP = { x: 3, y: 22, w: 4, h: 4 }; box(MAP.x, MAP.y, MAP.w, MAP.h);   // 沙发↔电视之间的大方形地形图
+const WALLPIC = { x: 12, y: 9, w: 2, h: 4 };   // 左中桌右侧墙上的挂画（可点，打开 wall1/wall2）
 const counter = { x: 14, y: 24, w: 6 };  box(counter.x, counter.y, counter.w, 1);
 
 const PLANTS = [{ x: 10, y: 3 }, { x: 20, y: 22 }, { x: 26, y: 23 }, { x: 11, y: 17 }];
@@ -309,12 +335,17 @@ PLANTS.forEach(p => grid[p.y][p.x] = 1);
 const RUG = { x: 1, y: 2, w: GW - 2, h: GH - 3 };
 
 const LAMPS = [
-  { x: 5, y: 5 }, { x: 4.5, y: 11 }, { x: 9.5, y: 11 },
-  { x: 16, y: 6 }, { x: 16, y: 13 },
-  { x: 24, y: 4 },
-  { x: 23.5, y: 11 }, { x: 29.5, y: 14 }, { x: 35.5, y: 14 },
-  { x: 15, y: 19 }, { x: 23, y: 21 }, { x: 29.5, y: 20 }, { x: 36, y: 20 },
-  { x: 6, y: 22 }, { x: 17, y: 23 }, { x: 30, y: 25 },
+  { x: 6, y: 5 },                                             // 左上长桌
+  { x: 4.5, y: 12 }, { x: 9.5, y: 12 },                       // 左墙桌 / 左中桌
+  { x: 16, y: 6 }, { x: 16, y: 12 },                          // 包间大桌（上 / 下）
+  { x: 24, y: 5 },                                            // 北窗桌
+  { x: 23.5, y: 13 }, { x: 28.5, y: 13 }, { x: 33.5, y: 13 }, // 东厅上排三方桌
+  { x: 23.5, y: 18 }, { x: 28.5, y: 18 }, { x: 33.5, y: 18 }, // 东厅下排三方桌
+  { x: 16, y: 19 },                                           // 厅心长桌
+  { x: 17, y: 23 },                                           // 收银台
+  { x: 5, y: 21 },                                            // 左下沙发电视区
+  { x: 35, y: 9 },                                            // 东角沙发电视区
+  { x: 33, y: 25 },                                           // 底部走廊 / 入口
 ];
 
 const COUNTER_SPOTS = [{ x: 15, y: 23 }, { x: 17, y: 23 }, { x: 19, y: 23 }];
@@ -602,61 +633,71 @@ function drawOuterWalls(ctx, night, time) {
   ctx.fillStyle = "#c9a24a"; ctx.fillRect(NW - TW + 4, 26 * TW - 1, 2, 3);
 }
 
-/* 一格书架里塞的东西：书脊 / 正面陈列盒 / 平摊堆 / 空位 */
+/* 一格架子里塞的桌游：封面朝外的盒 / 立着的盒脊 / 平摊的盒堆 / 空位。
+   桌游盒比书宽、方、色块大，封面有对比色画面 + 标题条，整体不像图书馆。 */
 function spineRun(ctx, x, y, len, vertical, seed0) {
   let p = 0, seed = seed0 | 1;
   const nx = () => (seed = (seed * 1103515245 + 12345) & 0x7fffffff);
-  while (p < len - 2) {
+  const pick = () => SPINE[nx() % SPINE.length];
+  const H = 10;
+  // 盒盖画面：底色 + 对比色画框 + 高光点，像桌游封面
+  const cover = (bx, by, bw, bh) => {
+    const base = pick(); ctx.fillStyle = base; ctx.fillRect(bx, by, bw, bh);
+    ctx.fillStyle = "rgba(255,255,255,.28)"; ctx.fillRect(bx, by, bw, 1);
+    ctx.fillStyle = "rgba(0,0,0,.30)"; ctx.fillRect(bx + bw - 1, by, 1, bh);
+    let art = pick(); if (art === base) art = pick();
+    ctx.fillStyle = art; ctx.fillRect(bx + 1, by + 2, bw - 2, bh - 4);
+    ctx.fillStyle = "rgba(255,255,255,.55)"; ctx.fillRect(bx + 2, by + 3, 2, 2);
+    ctx.fillStyle = "rgba(0,0,0,.35)"; ctx.fillRect(bx + 1, by + bh - 2, bw - 2, 1);  // 标题条
+  };
+  while (p < len - 3) {
     const r = nx() % 100;
     if (!vertical) {
-      if (r < 8) { p += 2 + (nx() % 3); continue; }                    // 空位
-      if (r < 22) {                                                    // 正面陈列盒
-        const bw = 7 + (nx() % 2);
-        if (p + bw > len - 1) break;
-        const col = SPINE[nx() % SPINE.length];
-        ctx.fillStyle = "rgba(0,0,0,.4)"; ctx.fillRect(x + p, y + 1, bw, 9);
-        ctx.fillStyle = col; ctx.fillRect(x + p, y, bw, 9);
-        ctx.fillStyle = "rgba(255,255,255,.30)"; ctx.fillRect(x + p, y, bw, 1);
-        ctx.fillStyle = "rgba(0,0,0,.28)"; ctx.fillRect(x + p + 1, y + 3, bw - 2, 4);
-        ctx.fillStyle = "rgba(255,255,255,.45)"; ctx.fillRect(x + p + 2, y + 4, 2, 2);
+      if (r < 6) { p += 2 + (nx() % 2); continue; }                        // 空位
+      if (r < 34) {                                                        // 封面朝外的盒
+        const bw = 8 + (nx() % 3); if (p + bw > len - 1) break;
+        ctx.fillStyle = "rgba(0,0,0,.42)"; ctx.fillRect(x + p + 1, y + 1, bw, H);
+        cover(x + p, y - 1, bw, H);
         p += bw + 1; continue;
       }
-      if (r < 30) {                                                    // 平摊一小堆
-        const bw = 6 + (nx() % 3);
-        if (p + bw > len - 1) break;
-        for (let k = 0; k < 3; k++) {
-          ctx.fillStyle = SPINE[nx() % SPINE.length];
-          ctx.fillRect(x + p + (k % 2), y + 6 - k * 2, bw - (k % 2), 2);
-          ctx.fillStyle = "rgba(0,0,0,.22)"; ctx.fillRect(x + p + (k % 2), y + 7 - k * 2, bw - (k % 2), 1);
+      if (r < 56) {                                                        // 平摊叠放的盒堆
+        const bw = 7 + (nx() % 3), stack = 2 + (nx() % 2); if (p + bw > len - 1) break;
+        for (let k = 0; k < stack; k++) {
+          const off = k % 2, yy = y + H - 1 - k * 3;
+          ctx.fillStyle = pick(); ctx.fillRect(x + p + off, yy - 3, bw - off * 2, 3);
+          ctx.fillStyle = "rgba(255,255,255,.28)"; ctx.fillRect(x + p + off, yy - 3, bw - off * 2, 1);
+          ctx.fillStyle = "rgba(0,0,0,.32)"; ctx.fillRect(x + p + off, yy - 1, bw - off * 2, 1);
         }
         p += bw + 1; continue;
       }
-      const s = 2 + (nx() % 3), h = 6 + (nx() % 4);                    // 书脊
-      if (p + s > len - 1) break;
-      const col = SPINE[nx() % SPINE.length];
-      const lean = (nx() % 12) === 0 ? 1 : 0;
-      ctx.fillStyle = col; ctx.fillRect(x + p, y + (9 - h) + lean, s, h - lean);
-      ctx.fillStyle = "rgba(255,255,255,.22)"; ctx.fillRect(x + p, y + (9 - h) + lean, 1, h - lean);
-      ctx.fillStyle = "rgba(0,0,0,.28)"; ctx.fillRect(x + p + s - 1, y + (9 - h) + lean, 1, h - lean);
-      if (s > 2 && h > 7) { ctx.fillStyle = "rgba(255,255,255,.35)"; ctx.fillRect(x + p + 1, y + (9 - h) + 2 + lean, s - 2, 1); }
-      p += s + 1;
+      const grp = 2 + (nx() % 3);                                          // 立着的盒脊（成组）
+      for (let g = 0; g < grp && p < len - 3; g++) {
+        const s = 3 + (nx() % 3), h = 8 + (nx() % 3); if (p + s > len - 1) break;
+        const yy = y + (H - h);
+        ctx.fillStyle = pick(); ctx.fillRect(x + p, yy, s, h);
+        ctx.fillStyle = "rgba(255,255,255,.24)"; ctx.fillRect(x + p, yy, 1, h);
+        ctx.fillStyle = "rgba(0,0,0,.30)"; ctx.fillRect(x + p + s - 1, yy, 1, h);
+        ctx.fillStyle = "rgba(255,255,255,.5)"; ctx.fillRect(x + p, yy + (h >> 1) - 1, s, 1);   // 标题带
+        ctx.fillStyle = "rgba(0,0,0,.22)"; ctx.fillRect(x + p, yy + (h >> 1) + 1, s, 1);
+        p += s + 1;
+      }
     } else {
-      if (r < 8) { p += 2 + (nx() % 3); continue; }
-      if (r < 20) {                                                    // 竖架上的正面盒
-        const bh = 7 + (nx() % 2);
-        if (p + bh > len - 1) break;
-        ctx.fillStyle = SPINE[nx() % SPINE.length]; ctx.fillRect(x - 1, y + p, 9, bh);
-        ctx.fillStyle = "rgba(255,255,255,.28)"; ctx.fillRect(x - 1, y + p, 9, 1);
-        ctx.fillStyle = "rgba(0,0,0,.26)"; ctx.fillRect(x, y + p + 2, 7, 3);
+      if (r < 6) { p += 2 + (nx() % 2); continue; }
+      if (r < 32) {                                                        // 竖架上封面朝外的盒
+        const bh = 8 + (nx() % 2); if (p + bh > len - 1) break;
+        const base = pick(); ctx.fillStyle = base; ctx.fillRect(x - 1, y + p, 9, bh);
+        ctx.fillStyle = "rgba(255,255,255,.26)"; ctx.fillRect(x - 1, y + p, 9, 1);
+        let art = pick(); if (art === base) art = pick();
+        ctx.fillStyle = art; ctx.fillRect(x + 1, y + p + 2, 5, bh - 4);
+        ctx.fillStyle = "rgba(255,255,255,.5)"; ctx.fillRect(x + 1, y + p + 2, 2, 2);
+        ctx.fillStyle = "rgba(0,0,0,.3)"; ctx.fillRect(x - 1, y + p + bh - 1, 9, 1);
         p += bh + 1; continue;
       }
-      const s = 2 + (nx() % 3);
-      if (p + s > len - 1) break;
-      ctx.fillStyle = SPINE[nx() % SPINE.length];
-      const wgt = 6 + (nx() % 3);
-      ctx.fillRect(x, y + p, wgt, s);
-      ctx.fillStyle = "rgba(255,255,255,.20)"; ctx.fillRect(x, y + p, wgt, 1);
+      const s = 3 + (nx() % 2), wgt = 7 + (nx() % 2); if (p + s > len - 1) break;   // 平摊盒脊
+      ctx.fillStyle = pick(); ctx.fillRect(x, y + p, wgt, s);
+      ctx.fillStyle = "rgba(255,255,255,.22)"; ctx.fillRect(x, y + p, wgt, 1);
       ctx.fillStyle = "rgba(0,0,0,.28)"; ctx.fillRect(x, y + p + s - 1, wgt, 1);
+      ctx.fillStyle = "rgba(255,255,255,.4)"; ctx.fillRect(x + 2, y + p, 1, s);      // 竖标题带
       p += s + 1;
     }
   }
@@ -821,36 +862,95 @@ function drawSofa(ctx, s) {
     ctx.fillStyle = PILLOW[s.x % PILLOW.length];                          // 抱枕
     ctx.fillRect(x + 6, y - 6, 6, 6);
     ctx.fillStyle = "rgba(255,255,255,.22)"; ctx.fillRect(x + 6, y - 6, 6, 1);
-  } else {                                           // 竖排 · 靠背在右（坐者朝西）
+  } else {                                           // 竖排 · 朝东则靠背在左，朝西则靠背在右
+    const east = s.dir === "e";
+    const cushX = east ? x + 6 : x + 1;              // 坐垫偏向坐者一侧
+    const backX = east ? x : x + 10;                 // 靠背在坐者背后
     ctx.fillStyle = C.sofaDk; ctx.fillRect(x, y - 6, TW, h + 4);
     ctx.fillStyle = C.sofa;   ctx.fillRect(x + 1, y - 5, TW - 2, h + 2);
-    ctx.fillStyle = C.sofaHi; ctx.fillRect(x + 1, y - 5, TW - 8, 3);
+    ctx.fillStyle = C.sofaHi; ctx.fillRect(cushX, y - 5, 8, 3);
     for (let i = 0; i < s.len; i++) {                                     // 坐垫
       const cy = y + i * TW;
-      ctx.fillStyle = C.sofa;   ctx.fillRect(x + 1, cy + 2, 9, TW - 4);
-      ctx.fillStyle = C.sofaHi; ctx.fillRect(x + 1, cy + 2, 9, 2);
-      ctx.fillStyle = "rgba(0,0,0,.22)"; ctx.fillRect(x + 1, cy + 1, 9, 1);
+      ctx.fillStyle = C.sofa;   ctx.fillRect(cushX, cy + 2, 9, TW - 4);
+      ctx.fillStyle = C.sofaHi; ctx.fillRect(cushX, cy + 2, 9, 2);
+      ctx.fillStyle = "rgba(0,0,0,.22)"; ctx.fillRect(cushX, cy + 1, 9, 1);
     }
-    ctx.fillStyle = C.sofaDk; ctx.fillRect(x + 10, y - 5, 6, h + 2);      // 靠背
-    ctx.fillStyle = C.sofaHi; ctx.fillRect(x + 10, y - 5, 2, h + 2);
+    ctx.fillStyle = C.sofaDk; ctx.fillRect(backX, y - 5, 6, h + 2);       // 靠背
+    ctx.fillStyle = C.sofaHi; ctx.fillRect(backX + (east ? 4 : 0), y - 5, 2, h + 2);
     ctx.fillStyle = C.sofaDk;                                             // 扶手
     ctx.fillRect(x, y - 5, TW, 4); ctx.fillRect(x, y + h - 3, TW, 4);
     ctx.fillStyle = PILLOW[(s.y + 1) % PILLOW.length];
-    ctx.fillRect(x + 2, y + 4, 6, 6);
-    ctx.fillStyle = "rgba(255,255,255,.22)"; ctx.fillRect(x + 2, y + 4, 6, 1);
+    ctx.fillRect(cushX + 1, y + 4, 6, 6);
+    ctx.fillStyle = "rgba(255,255,255,.22)"; ctx.fillRect(cushX + 1, y + 4, 6, 1);
   }
 }
-function drawCoffeeTable(ctx) {
-  const x = COFFEE.x * TW, y = COFFEE.y * TW, w = COFFEE.w * TW;
-  ctx.fillStyle = "rgba(0,0,0,.20)"; ctx.fillRect(x + 3, y + TW - 3, w - 6, 4);
-  ctx.fillStyle = C.tableEdge; ctx.fillRect(x + 1, y + 2, w - 2, TW - 5);
-  ctx.fillStyle = C.tableTop;  ctx.fillRect(x + 2, y + 3, w - 4, TW - 7);
-  ctx.fillStyle = C.tableHi;   ctx.fillRect(x + 2, y + 3, w - 4, 1);
-  ctx.fillStyle = "#f0e6d2"; ctx.fillRect(x + 6, y + 6, 4, 4);            // 马克杯
-  ctx.fillStyle = "#6b4226"; ctx.fillRect(x + 7, y + 7, 2, 1);
-  ctx.fillStyle = "#f0e6d2"; ctx.fillRect(x + 10, y + 6, 1, 2);
-  ctx.fillStyle = "#c94f3d"; ctx.fillRect(x + 17, y + 7, 7, 3);           // 一盒小游戏
-  ctx.fillStyle = "rgba(255,255,255,.25)"; ctx.fillRect(x + 17, y + 7, 7, 1);
+// 沙发↔电视之间那张大方桌，摆着一整幅鲜艳的桌游地形图
+function drawTerrainMap(ctx, time) {
+  const x = MAP.x * TW, y = MAP.y * TW, w = MAP.w * TW, h = MAP.h * TW;
+  // 桌身 + 桌腿投影
+  ctx.fillStyle = "rgba(0,0,0,.24)"; ctx.fillRect(x + 4, y + h - 3, w - 8, 5);
+  ctx.fillStyle = C.tableEdge; ctx.fillRect(x + 1, y + 2, w - 2, h - 4);
+  ctx.fillStyle = C.tableLo;   ctx.fillRect(x + 1, y + h - 6, w - 2, 4);
+  // 地图底板（米色羊皮纸）
+  const bx = x + 4, by = y + 5, bw = w - 8, bh = h - 12;
+  ctx.fillStyle = "#efe2c0"; ctx.fillRect(bx, by, bw, bh);
+  // 地形色块：河、湖、林、田、沙、山、路——用固定伪随机铺格，鲜艳
+  const PAL = ["#3f9d4e", "#7ec850", "#e8c74a", "#e59b3c", "#3f8fce", "#5fc7d8", "#b0552f", "#8a8f98"];
+  const cell = 4;
+  const cols = Math.floor(bw / cell), rows = Math.floor(bh / cell);
+  const hash = (i, j) => { const s = Math.sin(i * 12.9898 + j * 78.233) * 43758.5453; return s - Math.floor(s); };
+  for (let j = 0; j < rows; j++) for (let i = 0; i < cols; i++) {
+    // 中间偏蓝（湖），四周偏绿，穿插田/沙，右下一坨山
+    const dx = i - cols / 2, dy = j - rows / 2, d = Math.hypot(dx, dy);
+    let idx;
+    const r = hash(i, j);
+    if (d < 2.2) idx = r < .5 ? 4 : 5;                 // 中心湖泊
+    else if (i > cols - 4 && j > rows - 4) idx = r < .5 ? 7 : 6;  // 右下山脉
+    else if (r < .30) idx = 0;                          // 深林
+    else if (r < .55) idx = 1;                          // 浅草
+    else if (r < .72) idx = 2;                          // 麦田
+    else if (r < .84) idx = 3;                          // 沙地
+    else if (r < .92) idx = 4;                          // 支流
+    else idx = 6;                                       // 土路
+    ctx.fillStyle = PAL[idx];
+    ctx.fillRect(bx + i * cell, by + j * cell, cell, cell);
+  }
+  // 一条蜿蜒的河（亮蓝）横穿
+  ctx.fillStyle = "#4fa8e0";
+  for (let i = 0; i < cols; i++) {
+    const ry = by + Math.round(bh * .5 + Math.sin(i * .6) * bh * .18);
+    ctx.fillRect(bx + i * cell, ry, cell, cell);
+  }
+  // 几个据点（红/黄小屋）与棋子高光
+  const spots = [[.18, .28, "#d23b32"], [.72, .22, "#e6c34a"], [.30, .74, "#c96a9b"], [.82, .66, "#7a5aa8"], [.5, .5, "#f2efe6"]];
+  for (const [fx, fy, col] of spots) {
+    ctx.fillStyle = "rgba(0,0,0,.35)"; ctx.fillRect(bx + bw * fx, by + bh * fy + 1, 3, 2);
+    ctx.fillStyle = col; ctx.fillRect(bx + bw * fx, by + bh * fy - 1, 3, 3);
+    ctx.fillStyle = "rgba(255,255,255,.6)"; ctx.fillRect(bx + bw * fx, by + bh * fy - 1, 1, 1);
+  }
+  // 羊皮纸描边 + 表面反光，暗示可点
+  ctx.fillStyle = "rgba(60,40,20,.55)";
+  ctx.fillRect(bx, by, bw, 1); ctx.fillRect(bx, by + bh - 1, bw, 1);
+  ctx.fillRect(bx, by, 1, bh); ctx.fillRect(bx + bw - 1, by, 1, bh);
+  const sh = .12 + Math.sin(time * 1.6) * .05;
+  ctx.fillStyle = `rgba(255,255,255,${sh})`;
+  ctx.fillRect(bx + 1, by + 1, bw - 2, 2);
+}
+// 左中桌右侧那面墙保持原样，只加一层缓慢扫过的反光，暗示此处可点
+function drawWallHint(ctx, time) {
+  const x = WALLPIC.x * TW, y = WALLPIC.y * TW, w = WALLPIC.w * TW, h = WALLPIC.h * TW;
+  const t = (time * .3) % 1.5;                       // 高光带缓慢下扫
+  const cy = y - 6 + t * (h + 12);
+  for (let i = 0; i < 8; i++) {
+    const yy = Math.round(cy - 4 + i);
+    if (yy < y - 2 || yy > y + h + 2) continue;
+    const a = (1 - Math.abs(i - 3.5) / 4) * .14;
+    ctx.fillStyle = `rgba(255,247,222,${a.toFixed(3)})`;
+    ctx.fillRect(x, yy, w, 1);
+  }
+  const s = .12 + (Math.sin(time * 3) * .5 + .5) * .35;   // 一点微闪
+  ctx.fillStyle = `rgba(255,255,255,${s.toFixed(2)})`;
+  ctx.fillRect(x + w - 3, y + 4, 1, 1);
 }
 function drawTV(ctx, time) {
   const x = TV.x * TW, y = TV.y * TW, w = TV.w * TW;
@@ -867,37 +967,67 @@ function drawTV(ctx, time) {
   ctx.fillStyle = "#2a272e"; ctx.fillRect(x + w - 16, y - 2, 11, 5);
   ctx.fillStyle = Math.sin(time * 2.2) > 0 ? "#8fe0a0" : "#3d6b4a"; ctx.fillRect(x + w - 14, y, 1, 1);
 
-  // 屏幕
+  // 屏幕背对店内：只见机背，光从屏幕后缘溢出
   const sw = w - 14, sh = 26, sxp = x + 7, syp = y - 26;
+  const flick = .72 + Math.sin(time * 9) * .08 + Math.sin(time * 2.3) * .12;
+  // 背后漏出的光晕
+  const gg = ctx.createRadialGradient(sxp + sw / 2, syp + sh / 2, 3, sxp + sw / 2, syp + sh / 2, sh * 1.7);
+  gg.addColorStop(0, `rgba(130,190,225,${.30 * flick})`);
+  gg.addColorStop(.5, `rgba(80,140,190,${.15 * flick})`);
+  gg.addColorStop(1, "rgba(80,140,190,0)");
+  ctx.fillStyle = gg; ctx.fillRect(sxp - 20, syp - 18, sw + 40, sh + 34);
+  // 机背外框 + 背板
   ctx.fillStyle = "#15141a"; ctx.fillRect(sxp - 2, syp - 2, sw + 4, sh + 4);
-  ctx.fillStyle = "#2e2b34"; ctx.fillRect(sxp - 1, syp - 1, sw + 2, sh + 2);
-  ctx.fillStyle = "#0d1418"; ctx.fillRect(sxp, syp, sw, sh);
-  // 画面：滚动色带 + 扫描线 + 闪烁
-  const flick = .78 + Math.sin(time * 11) * .06 + Math.sin(time * 2.7) * .1;
-  const bands = [["#2f5f8a", 0], ["#3f8fae", 7], ["#68b39a", 13], ["#254b6b", 19]];
-  for (const [col, off] of bands) {
-    const by = syp + ((off + Math.floor(time * 6)) % sh);
-    ctx.globalAlpha = flick;
-    ctx.fillStyle = col;
-    ctx.fillRect(sxp, by, sw, Math.min(6, syp + sh - by));
-    ctx.globalAlpha = 1;
-  }
-  // 画面里晃动的小剪影
-  ctx.fillStyle = `rgba(14,20,26,${flick})`;
-  const fig = Math.round(Math.sin(time * 1.6) * 6);
-  ctx.fillRect(sxp + sw / 2 - 3 + fig, syp + sh - 12, 6, 9);
-  ctx.fillRect(sxp + sw / 2 - 2 + fig, syp + sh - 16, 4, 4);
-  // 扫描线 + 玻璃反光
-  ctx.fillStyle = "rgba(0,0,0,.18)";
-  for (let i = 0; i < sh; i += 3) ctx.fillRect(sxp, syp + i, sw, 1);
-  ctx.fillStyle = `rgba(220,240,255,${.10 + flick * .06})`;
-  ctx.beginPath();
-  ctx.moveTo(sxp + 2, syp + sh - 2); ctx.lineTo(sxp + sw * .42, syp + 1);
-  ctx.lineTo(sxp + sw * .62, syp + 1); ctx.lineTo(sxp + 2, syp + sh - 2);
-  ctx.closePath(); ctx.fill();
+  ctx.fillStyle = "#26242c"; ctx.fillRect(sxp - 1, syp - 1, sw + 2, sh + 2);
+  ctx.fillStyle = "#302d38"; ctx.fillRect(sxp, syp, sw, sh);
+  ctx.fillStyle = "rgba(255,255,255,.07)"; ctx.fillRect(sxp, syp, sw, 1);
+  // 散热格栅
+  ctx.fillStyle = "rgba(0,0,0,.30)";
+  for (let i = 3; i < sh - 3; i += 3) ctx.fillRect(sxp + 3, syp + i, sw - 6, 1);
+  // 中央安装凸台
+  ctx.fillStyle = "#3a3742"; ctx.fillRect(sxp + sw / 2 - 6, syp + sh / 2 - 5, 12, 10);
+  ctx.fillStyle = "#211f27"; ctx.fillRect(sxp + sw / 2 - 4, syp + sh / 2 - 3, 8, 6);
+  ctx.fillStyle = "rgba(255,255,255,.06)"; ctx.fillRect(sxp + sw / 2 - 6, syp + sh / 2 - 5, 12, 1);
+  // 四周边缘漏光（屏幕光溢出）
+  ctx.fillStyle = `rgba(155,205,238,${.55 * flick})`;
+  ctx.fillRect(sxp - 2, syp - 2, sw + 4, 1);
+  ctx.fillRect(sxp - 2, syp + sh + 1, sw + 4, 1);
+  ctx.fillRect(sxp - 2, syp - 2, 1, sh + 4);
+  ctx.fillRect(sxp + sw + 1, syp - 2, 1, sh + 4);
+  // 电源线垂到柜面
+  ctx.fillStyle = "#1a1a1f"; ctx.fillRect(sxp + sw / 2, syp + sh + 2, 1, 4);
   // 底座
   ctx.fillStyle = "#1c1a20"; ctx.fillRect(x + w / 2 - 3, y - 1, 6, 3);
   ctx.fillStyle = "#2e2b34"; ctx.fillRect(x + w / 2 - 8, y + 1, 16, 2);
+}
+// 挂在东墙、屏幕朝西的平板电视，正对角落竖排沙发
+function drawTVWall(ctx, time) {
+  const x = TV2.x * TW, y = TV2.y * TW, h = TV2.h * TW;
+  const sw = 8, sh = h - 8, sx0 = x - 4, sy0 = y + 4;      // 屏幕朝西探出
+  const flick = .74 + Math.sin(time * 10) * .08 + Math.sin(time * 2.5) * .1;
+  // 朝西洒进厅里的光晕
+  const gg = ctx.createRadialGradient(sx0 + sw / 2, sy0 + sh / 2, 3, sx0 + sw / 2, sy0 + sh / 2, sh * 1.5);
+  gg.addColorStop(0, `rgba(130,190,225,${.30 * flick})`);
+  gg.addColorStop(.5, `rgba(80,140,190,${.14 * flick})`);
+  gg.addColorStop(1, "rgba(80,140,190,0)");
+  ctx.fillStyle = gg; ctx.fillRect(sx0 - 30, sy0 - 14, sw + 46, sh + 28);
+  // 贴墙机身 + 支架
+  ctx.fillStyle = "#1c1a20"; ctx.fillRect(x + 2, y + 2, TW - 3, h - 4);
+  // 屏幕外框
+  ctx.fillStyle = "#15141a"; ctx.fillRect(sx0 - 2, sy0 - 2, sw + 4, sh + 4);
+  ctx.fillStyle = "#2e2b34"; ctx.fillRect(sx0 - 1, sy0 - 1, sw + 2, sh + 2);
+  ctx.fillStyle = "#0d1418"; ctx.fillRect(sx0, sy0, sw, sh);
+  // 画面：竖向滚动色带
+  const bands = [["#2f5f8a", 0], ["#3f8fae", 8], ["#68b39a", 16], ["#254b6b", 24]];
+  for (const [col, off] of bands) {
+    const by = sy0 + ((off + Math.floor(time * 6)) % sh);
+    ctx.globalAlpha = flick; ctx.fillStyle = col;
+    ctx.fillRect(sx0, by, sw, Math.min(6, sy0 + sh - by)); ctx.globalAlpha = 1;
+  }
+  // 扫描线 + 玻璃反光（左沿）
+  ctx.fillStyle = "rgba(0,0,0,.18)";
+  for (let i = 0; i < sh; i += 3) ctx.fillRect(sx0, sy0 + i, sw, 1);
+  ctx.fillStyle = `rgba(220,240,255,${.1 + flick * .06})`; ctx.fillRect(sx0 + 1, sy0 + 1, 2, sh - 2);
 }
 function drawVoid(ctx) {
   const x = VOID.x * TW, y = VOID.y * TW, w = VOID.w * TW, h = VOID.h * TW;
@@ -1472,13 +1602,13 @@ function personGeom(n) {
     headHW: 4,
     torsoHW: build === "tall" ? 6 : build === "tallSlim" ? 5 : build === "stout" ? 6
            : build === "chubby" ? 5 : build === "tallThin" ? 3 : build === "tallLean" ? 4
-           : build === "slimShort" ? 3 : 4,
+           : build === "slimShort" ? 3 : build === "leanTall" ? 4 : build === "slimStout" ? 4 : 4,
     legLen:  build === "tall" ? 8 : build === "tallSlim" ? 7 : build === "stout" ? 4
            : build === "chubby" ? 4 : build === "tallThin" ? 8 : build === "tallLean" ? 7
-           : build === "slimShort" ? 7 : 5,
+           : build === "slimShort" ? 7 : build === "leanTall" ? 8 : build === "slimStout" ? 4 : 5,
     torsoH:  build === "tall" ? 10 : build === "tallSlim" ? 8 : build === "stout" ? 7
            : build === "chubby" ? 7 : build === "tallThin" ? 10 : build === "tallLean" ? 8
-           : build === "slimShort" ? 8 : 7,
+           : build === "slimShort" ? 8 : build === "leanTall" ? 10 : build === "slimStout" ? 7 : 7,
     legW:    build === "stout" || build === "chubby" ? 3 : 2,
   };
 }
@@ -1504,6 +1634,15 @@ function bodyPass(ctx, n, g, cx, base, time, mono) {
 
   F(n.shirt);                                    // 躯干
   ctx.fillRect(cx - hw, bodyBase - torsoH, hw * 2 + 1, torsoH);
+  if (n.robe) {                                  // 长袍：从肩一直垂到脚踝，盖住腿
+    const rt = bodyBase - torsoH, rh = base - rt - 1;
+    F(n.shirt); ctx.fillRect(cx - hw, rt, hw * 2 + 1, rh);
+    if (!mono) {
+      ctx.fillStyle = "rgba(0,0,0,.20)"; ctx.fillRect(cx + hw - 1, rt, 2, rh);
+      ctx.fillStyle = "rgba(255,255,255,.06)"; ctx.fillRect(cx - hw, rt, 1, rh);
+      ctx.fillStyle = "rgba(0,0,0,.18)"; ctx.fillRect(cx, rt + 3, 1, rh - 4);   // 门襟
+    }
+  }
   if (build === "stout") {                       // 溜肩：把两个上角削掉
     ctx.fillRect(cx - hw, bodyBase - torsoH, 2, 1);
     ctx.fillRect(cx + hw - 1, bodyBase - torsoH, 2, 1);
@@ -1576,12 +1715,31 @@ function bodyPass(ctx, n, g, cx, base, time, mono) {
     ctx.fillRect(cx - 2, bodyBase - torsoH + 5, 1, 1); ctx.fillRect(cx + 2, bodyBase - torsoH + 5, 1, 1);
   }
 
-  // 战衣是长袖：胳膊跟着上衣走，只在手腕露出一截皮肤
-  F(n.spider ? n.shirt : n.skin);                // 手臂
+  if (n.firework && !mono && n.dir !== "n") {    // 上衣胸口：一朵烟花
+    const fx = cx, fy = bodyBase - torsoH + Math.max(3, (torsoH >> 1) - 1);
+    for (const [c, dx, dy] of [["#ff6b6b", 0, -2], ["#ffd24a", 2, -1], ["#5fd0ff", 2, 1], ["#8affa0", 0, 2], ["#ff8ad6", -2, 1], ["#c9a4ff", -2, -1]]) {
+      ctx.fillStyle = c;
+      ctx.fillRect(fx + dx, fy + dy, 1, 1);
+      ctx.fillRect(fx + Math.sign(dx), fy + Math.sign(dy), 1, 1);
+    }
+    ctx.fillStyle = "#ffe9a8"; ctx.fillRect(fx, fy, 1, 1);
+  }
+  if (n.starry && !mono && n.dir !== "n") {      // 上衣胸口：梵高《星夜》
+    const sx0 = cx - 3, sy0 = bodyBase - torsoH + 3, sw = 7, sh = Math.min(6, torsoH - 4);
+    ctx.fillStyle = "#16265f"; ctx.fillRect(sx0, sy0, sw, sh);
+    ctx.fillStyle = "#33509e"; ctx.fillRect(sx0, sy0 + 1, sw, 1); ctx.fillRect(sx0, sy0 + sh - 2, sw, 1);
+    ctx.fillStyle = "rgba(120,160,230,.6)"; ctx.fillRect(sx0 + 1, sy0 + 2, 4, 1);
+    ctx.fillStyle = "#f2d24a"; ctx.fillRect(sx0 + 1, sy0 + 1, 1, 1); ctx.fillRect(sx0 + 4, sy0, 1, 1);
+    ctx.fillStyle = "#f7e58a"; ctx.fillRect(sx0 + sw - 2, sy0 + 1, 1, 1);       // 月
+    ctx.fillStyle = "rgba(247,229,138,.6)"; ctx.fillRect(sx0 + sw - 3, sy0 + 2, 1, 1);
+  }
+
+  // 长袖：战衣 / 长袍 的胳膊跟着上衣走，只在手腕露出一截皮肤
+  F(n.spider || n.robe ? n.shirt : n.skin);      // 手臂
   const swing = moving ? (walk === 1 ? 1 : walk === 3 ? -1 : 0) : 0;
   ctx.fillRect(cx - hw - 1, bodyBase - torsoH + 2 + swing, 1, 4);
   ctx.fillRect(cx + hw + 1, bodyBase - torsoH + 2 - swing, 1, 4);
-  if (n.spider) {
+  if (n.spider || n.robe) {                      // 长袖露出的手腕
     F(n.skin);
     ctx.fillRect(cx - hw - 1, bodyBase - torsoH + 6 + swing, 1, 1);
     ctx.fillRect(cx + hw + 1, bodyBase - torsoH + 6 - swing, 1, 1);
@@ -1606,7 +1764,7 @@ function bodyPass(ctx, n, g, cx, base, time, mono) {
     if (!mono) { ctx.fillStyle = "rgba(0,0,0,.10)"; ctx.fillRect(cx + hhw - 1, hy, 2, 8); }
   }
 
-  drawHair(ctx, n, cx, hy, mono);
+  if (!n.mask) drawHair(ctx, n, cx, hy, mono);   // 蜘蛛侠面具盖住头发
   if (n.hat && n.cap) drawCap(ctx, n, cx, hy, hhw, mono);
   else if (n.hat) { F(n.hatColor); ctx.fillRect(cx - hhw - 1, hy - 2, hhw * 2 + 3, 2); ctx.fillRect(cx - 3, hy - 6, 7, 4); }
 
@@ -1626,6 +1784,11 @@ function bodyPass(ctx, n, g, cx, base, time, mono) {
     if (n.dir === "s") { ctx.fillRect(elx, ey, ew, eh); ctx.fillRect(cx + 2, ey, ew, eh); }
     else if (n.dir === "e") { ctx.fillRect(cx + 2, ey, ew, eh); }
     else if (n.dir === "w") { ctx.fillRect(elx, ey, ew, eh); }
+    if (n.eyebrow && n.dir !== "n") {           // 眉毛：两眼上方各一道
+      ctx.fillStyle = "#3a2c20";
+      if (n.dir !== "e") ctx.fillRect(cx - 3, hy + 2, 2, 1);
+      if (n.dir !== "w") ctx.fillRect(cx + 2, hy + 2, 2, 1);
+    }
     if (n.lashes && !blink && n.dir !== "n") {
       ctx.fillStyle = "#2a2118";
       if (n.dir !== "e") ctx.fillRect(cx - 3, ey - 1, 1, 1);
@@ -1639,10 +1802,36 @@ function bodyPass(ctx, n, g, cx, base, time, mono) {
       ctx.fillRect(cx - bx, hy + 6, bw, 1); ctx.fillRect(cx + bx - bw + 1, hy + 6, bw, 1);
     }
     // 传没被眨眼位移过的基准行：镜架是架在鼻梁上的，不该跟着眼皮上下跳
-    if (n.glasses && n.dir !== "n") drawGlasses(ctx, n, cx, hy + 4);
+    if (n.glasses && !n.mask && n.dir !== "n") drawGlasses(ctx, n, cx, hy + 4);
   }
+  if (n.mask) drawSpiderMask(ctx, n, cx, hy, hhw, mono);   // 面具盖在五官之上
 
   if (n.laptop) drawLaptop(ctx, n, cx, bodyBase, torsoH, hw, time, mono);
+}
+
+// 蜘蛛侠面具：红色头罩 + 蛛网 + 白色大眼罩（跟随尖脸收窄、按朝向出眼）
+function drawSpiderMask(ctx, n, cx, hy, hhw, mono) {
+  ctx.fillStyle = mono || "#c33027";
+  for (let r = 0; r < 8; r++) {                  // 罩住整颗头，尖脸下半收窄
+    const t = n.faceTaper ? FACE_TAPER[r] : 0;
+    ctx.fillRect(cx - hhw + t, hy + r, (hhw - t) * 2 + 1, 1);
+  }
+  if (mono) return;
+  ctx.fillStyle = "rgba(0,0,0,.30)";             // 蛛网：一竖 + 两横 + 放射
+  ctx.fillRect(cx, hy, 1, 8);
+  ctx.fillRect(cx - hhw + 1, hy + 1, hhw * 2 - 1, 1);
+  ctx.fillRect(cx - 2, hy + 6, 5, 1);
+  ctx.fillRect(cx - hhw + 1, hy + 3, 2, 1); ctx.fillRect(cx + hhw - 2, hy + 3, 2, 1);
+  const eye = (ox, mir) => {                      // 斜白眼 + 黑边
+    ctx.fillStyle = "#0b0b0d"; ctx.fillRect(ox, hy + 2, 3, 4);
+    ctx.fillStyle = "#dfeaf0";
+    if (!mir) { ctx.fillRect(ox, hy + 3, 2, 1); ctx.fillRect(ox + 1, hy + 4, 2, 1); }
+    else { ctx.fillRect(ox + 1, hy + 3, 2, 1); ctx.fillRect(ox, hy + 4, 2, 1); }
+  };
+  if (n.dir === "n") return;                      // 背面只有红罩 + 网
+  if (n.dir === "e") eye(cx + 1, true);
+  else if (n.dir === "w") eye(cx - 4, false);
+  else { eye(cx - 4, false); eye(cx + 2, true); }
 }
 
 /* 黑framed眼镜：正面两个方框 + 鼻梁，侧面只画朝向那一侧的一片镜片 */
@@ -1831,16 +2020,32 @@ const CAST = {
     skin: "#f7dcc0", hair: "#5c4636", hairStyle: "bob", lashes: true,
     shirt: "#7fb2c4", pants: "#3d4a63", postDX: -1,
   },
-  baibai: {                         // 白白：仿雪兔——过肩长发、比雪兔稍矮、一样瘦、换一身淡紫店员服
+  baibai: {                         // 白白：仿雪兔——过肩长发、比雪兔稍矮、一样瘦、淡紫店员服、红鸭舌帽
     name: "白白", role: "clerk", build: "slimShort", resident: true,
     skin: "#f7dcc0", hair: "#5c4636", hairStyle: "long", lashes: true,
-    shirt: "#9d8fc6", pants: "#3f3a55", postDX: 1,
+    shirt: "#9d8fc6", pants: "#3f3a55", cap: true, capColor: "#cf3a2f", postDX: 1,
   },
-  lanwen: {                         // lanwen：蜘蛛侠战衣但不戴面具、瘦、中分
+  yanhua: {                         // 烟花：和店长差不多高但偏瘦、普通有刘海发型、细框眼镜、上衣画烟花、非店员
+    name: "烟花", role: "regular", build: "leanTall", resident: true,
+    skin: "#e8bd90", hair: "#2c2118", hairStyle: "medium",
+    glasses: true, glassThin: true, glassColor: "#9a90a6",
+    shirt: "#33506b", pants: "#3a3a44", firework: true,
+  },
+  liangzi: {                        // 良子：和小熊差不多高但偏瘦、披肩黑发、黑长袍、有眉毛
+    name: "良子", role: "regular", build: "slimStout", resident: true,
+    skin: "#e6b88c", hair: "#161616", hairStyle: "long",
+    eyebrow: true, robe: true, shirt: "#26242c", pants: "#1e1c22",
+  },
+  lige: {                           // 李哥：中等身高身材、前刺、上衣画梵高星空、细框眼镜
+    name: "李哥", role: "regular", build: "normal", resident: true,
+    skin: "#e8c49c", hair: "#2c2218", hairStyle: "spike",
+    glasses: true, glassThin: true, glassColor: "#9a90a6",
+    shirt: "#1d3a5c", pants: "#2a2a33", starry: true,
+  },
+  lanwen: {                         // lanwen：蜘蛛侠战衣 + 面具、瘦、中分
     name: "lanwen", role: "regular", build: "tallLean", resident: true,
     skin: "#e8bd90", hair: "#2b2320", hairStyle: "middle",
-    faceTaper: true, glasses: true, glassThin: true, glassColor: "#9a90a6",
-    spider: true, shirt: "#c0302c", pants: "#22409a",
+    faceTaper: true, spider: true, mask: true, shirt: "#c0302c", pants: "#22409a",
   },
 };
 
@@ -1872,13 +2077,18 @@ function makePerson(castKey) {
     eyeColor: c ? c.eyeColor || null : null,
     hoodie: !!(c && c.hoodie),
     inner: c ? c.inner || null : null,
+    firework: !!(c && c.firework),
+    starry: !!(c && c.starry),
+    robe: !!(c && c.robe),
+    eyebrow: !!(c && c.eyebrow),
     faceTaper: !!(c && c.faceTaper),
     spider: !!(c && c.spider),
+    mask: !!(c && c.mask),
     postDX: c && c.postDX !== undefined ? c.postDX : 0,
     eyeShadow: c ? c.eyeShadow || null : null,
     skirt: c ? c.skirt || null : null,
     // 海莉这类「有时戴帽子」的，每次换班重新掷一次
-    hat: c ? (c.cap ? Math.random() < .5 : false) : Math.random() < .18,
+    hat: c ? !!c.cap : Math.random() < .18,          // 有帽的常驻角色（白白）一直戴
     hatColor: c && c.capColor ? c.capColor : rnd(SHIRT),
     seed: Math.random() * 10,
     px: SPAWN.x * TW + TW / 2, py: SPAWN.y * TW + TW - 2,
@@ -2088,7 +2298,7 @@ function update(n, dt, time) {
         n.leaving = false; n.lounged = false; n.pickedGame = null;
         n.px = SPAWN.x * TW + TW / 2; n.py = SPAWN.y * TW + TW - 2;
         n.dir = "s"; n.path = [];
-        if (n.cap) n.hat = Math.random() < .5;    // 每次来重新决定戴不戴帽
+        if (n.cap) n.hat = true;                  // 戴帽角色一直戴着
       }
       break;
 
@@ -2268,15 +2478,18 @@ function drawLight(night, time) {
   lx.globalCompositeOperation = "destination-out";
   for (const l of LAMPS) {
     const cx = l.x * TW + 8, cy = l.y * TW;
-    const r = 54 + Math.sin(time * 2 + l.x) * 2;
-    const g = lx.createRadialGradient(cx, cy, 3, cx, cy, r);
+    const r = 86 + Math.sin(time * 2 + l.x) * 3;
+    const g = lx.createRadialGradient(cx, cy, 4, cx, cy, r);
     g.addColorStop(0, "rgba(0,0,0,.95)");
-    g.addColorStop(.45, "rgba(0,0,0,.55)");
+    g.addColorStop(.5, "rgba(0,0,0,.6)");
     g.addColorStop(1, "rgba(0,0,0,0)");
     lx.fillStyle = g; lx.beginPath(); lx.arc(cx, cy, r, 0, 7); lx.fill();
   }
-  {                                    // 电视也照亮一小片
-    const cx = (TV.x + TV.w / 2) * TW, cy = TV.y * TW - 6, r = 40;
+  for (const [cx, cy] of [                            // 两台电视也各照亮一小片
+    [(TV.x + TV.w / 2) * TW, TV.y * TW - 6],
+    [TV2.x * TW, (TV2.y + TV2.h / 2) * TW],
+  ]) {
+    const r = 46;
     const g = lx.createRadialGradient(cx, cy, 2, cx, cy, r);
     g.addColorStop(0, "rgba(0,0,0,.7)"); g.addColorStop(1, "rgba(0,0,0,0)");
     lx.fillStyle = g; lx.beginPath(); lx.arc(cx, cy, r, 0, 7); lx.fill();
@@ -2297,7 +2510,7 @@ const SAVE_KEY = "bbg-boardgame-v3";
 const PERSON_KEYS = ["castKey", "name", "staff", "role", "build", "collar", "apron",
   "bag", "laptop", "cap", "hairStyle", "skin", "hair", "shirt", "pants", "style",
   "hat", "hatColor", "lashes", "glasses", "glassColor", "glassThin", "smallEyes", "bigEyes",
-  "eyeColor", "hoodie", "inner", "faceTaper", "spider", "postDX",
+  "eyeColor", "hoodie", "inner", "firework", "starry", "robe", "eyebrow", "faceTaper", "spider", "mask", "postDX",
   "eyeShadow", "skirt", "seed", "px", "py", "dir", "state", "timer", "emote", "emoteT",
   "sitting", "lying", "browseAt", "pickedGame", "lounged", "leaving", "task", "stockDir"];
 
@@ -2361,8 +2574,8 @@ function loadState() {
       for (const k of ["name", "role", "staff", "build", "collar", "apron", "bag",
                        "laptop", "cap", "hairStyle", "skin", "hair", "shirt", "pants",
                        "style", "lashes", "glasses", "glassColor", "glassThin", "smallEyes", "bigEyes",
-                       "eyeColor", "hoodie", "inner", "faceTaper", "spider", "postDX", "eyeShadow", "skirt", "hatColor"]) n[k] = look[k];
-      if (!c.cap) n.hat = false;
+                       "eyeColor", "hoodie", "inner", "firework", "starry", "robe", "eyebrow", "faceTaper", "spider", "mask", "postDX", "eyeShadow", "skirt", "hatColor"]) n[k] = look[k];
+      n.hat = !!c.cap;                            // 帽子只认 CAST 设定（白白恒戴，其余常驻不戴）
       n._hairHi = null; n._hairSh = null;
     }
     n.chair = chairOf(o.chair);
@@ -2397,12 +2610,15 @@ function spawnResident(key, tx, ty, task) {
 const RESIDENTS = [
   ["haley",  18, 17, ""],
   ["owner",  SOFAS[0].x + 2, SOFAS[0].y + 1, "wake"],
-  ["mo",     24, 17, "wake"],
+  ["mo",     25, 15, "wake"],
   ["coder",  20, 17, "stretch"],
   ["bear",   STAFF_POST.x, STAFF_POST.y, "counter"],
   ["rabbit", STAFF_POST.x - 1, STAFF_POST.y, "counter"],
   ["baibai", STAFF_POST.x + 1, STAFF_POST.y, "counter"],
-  ["lanwen", 22, 17, ""],
+  ["lanwen", 30, 15, ""],
+  ["yanhua", 25, 16, ""],
+  ["liangzi", 30, 16, ""],
+  ["lige",   35, 16, ""],
 ];
 RESIDENTS.forEach(r => spawnResident(...r));
 
@@ -2418,6 +2634,55 @@ try {
     if (typeof document !== "undefined" && document.visibilityState === "hidden") saveState();
   });
 } catch (e) { /* 无事件环境下跳过 */ }
+
+// 可点热区：点地形图放大 dx.jpg；点墙上挂画依次放大 wall1→wall2，末张后关闭。带缩放动画，Esc/点覆盖层关闭
+try {
+  const screenEl = view.parentElement || document.querySelector(".screen");
+  const overlay = document.createElement("div");
+  overlay.className = "mapzoom";
+  const img = document.createElement("img");
+  overlay.appendChild(img);
+  screenEl.appendChild(overlay);
+
+  const HOTSPOTS = [
+    { rect: MAP, imgs: ["photo/dx.jpg"] },
+    { rect: WALLPIC, imgs: ["photo/wall1.jpg", "photo/wall2.jpg"] },
+  ];
+  const worldXY = (cx, cy) => {
+    const r = view.getBoundingClientRect();
+    return [(cx - r.left) / r.width * NW, (cy - r.top) / r.height * NH];
+  };
+  const inRect = (rc, wx, wy) => wx >= rc.x * TW && wx < (rc.x + rc.w) * TW && wy >= rc.y * TW && wy < (rc.y + rc.h) * TW;
+
+  let cur = null, idx = 0;
+  const show = src => {                         // 重置再加 show，让每次都重播缩放动画
+    img.src = src; overlay.classList.remove("show"); void overlay.offsetWidth; overlay.classList.add("show");
+  };
+  const close = () => { overlay.classList.remove("show"); cur = null; };
+  const inImgCenter = (cx, cy) => {             // 点是否落在当前图片的中间区域（中央 50%）
+    const r = img.getBoundingClientRect();
+    return Math.abs(cx - (r.left + r.width / 2)) < r.width * .25 &&
+           Math.abs(cy - (r.top + r.height / 2)) < r.height * .25;
+  };
+
+  overlay.addEventListener("click", e => {
+    if (!cur) return close();
+    // 有下一张且点在图片中间 → 前进；否则关闭
+    if (idx < cur.imgs.length - 1 && inImgCenter(e.clientX, e.clientY)) { idx++; show(cur.imgs[idx]); }
+    else close();
+  });
+  view.addEventListener("click", e => {
+    if (overlay.classList.contains("show")) return;   // 打开时交给覆盖层处理
+    const [wx, wy] = worldXY(e.clientX, e.clientY);
+    const hs = HOTSPOTS.find(h => inRect(h.rect, wx, wy));
+    if (hs) { cur = hs; idx = 0; show(hs.imgs[0]); }
+  });
+  view.addEventListener("mousemove", e => {
+    const [wx, wy] = worldXY(e.clientX, e.clientY);
+    view.style.cursor = HOTSPOTS.some(h => inRect(h.rect, wx, wy)) ? "zoom-in" : "default";
+  });
+  addEventListener("keydown", e => { if (e.key === "Escape") close(); });
+} catch (e) { /* 无 DOM 环境（如离屏渲染工具）下跳过 */ }
 
 function frame(now) {
   now /= 1000;
@@ -2458,7 +2723,9 @@ function frame(now) {
   });
   SOFAS.forEach(s => items.push({ y: (s.y + s.h) * TW - 2, d: c => drawSofa(c, s) }));
   items.push({ y: (TV.y + 1) * TW, d: c => drawTV(c, time) });
-  items.push({ y: (COFFEE.y + 1) * TW, d: c => drawCoffeeTable(c) });
+  items.push({ y: (TV2.y + TV2.h) * TW, d: c => drawTVWall(c, time) });
+  items.push({ y: (MAP.y + MAP.h) * TW, d: c => drawTerrainMap(c, time) });
+  items.push({ y: (WALLPIC.y + WALLPIC.h) * TW + 2, d: c => drawWallHint(c, time) });
   items.push({ y: (counter.y + 1) * TW, d: c => drawCounter(c, time) });
   PLANTS.forEach(pl => items.push({ y: pl.y * TW + TW, d: c => drawPlant(c, pl, time) }));
   people.forEach(n => {
@@ -2506,7 +2773,7 @@ function frame(now) {
   if (night > .05) {
     sx.globalCompositeOperation = "lighter";
     for (const l of LAMPS) {
-      const cx = l.x * TW + 8, cy = l.y * TW, r = 40;
+      const cx = l.x * TW + 8, cy = l.y * TW, r = 64;
       const g = sx.createRadialGradient(cx, cy, 1, cx, cy, r);
       g.addColorStop(0, `rgba(255,196,110,${.18 * night})`);
       g.addColorStop(1, "rgba(255,196,110,0)");

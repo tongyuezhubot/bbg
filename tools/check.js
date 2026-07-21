@@ -8,24 +8,30 @@ const IWV=[],IWH=[];
 const aV=(x,y,h)=>{IWV.push({x,y,h});box(x,y,1,h);};
 const aH=(x,y,w)=>{IWH.push({x,y,w});box(x,y,w,1);};
 aV(12,2,12);aH(12,16,8);aV(19,2,3);aV(19,7,9);aV(28,2,2);aV(28,6,1);aH(23,7,GW-23);aH(22,24,GW-22);
+box(28,0,12,8); // 东北角 VOID（与 index.html 一致：整块封死，不是可走地板）
 const shelves=[];const aS=(x,y,w)=>{shelves.push({x,y,w});box(x,y,w,1);};
 aS(2,2,10);aS(14,2,5);aS(20,2,8);aS(29,2,3);aS(35,2,4);aS(9,26,5);aS(24,26,13);
 const wsh=[];const aWS=(x,y,h,dir)=>{wsh.push({x,y,h,dir});box(x,y,1,h);};
-aWS(1,2,7,'w');aWS(1,14,5,'w');aWS(13,2,11,'w');aWS(38,11,6,'e');
+aWS(1,2,7,'w');aWS(1,14,5,'w');aWS(13,2,11,'w');aWS(38,12,4,'e');
 const PILL=[{x:32,y:2,w:3,h:3},{x:31,y:8,w:3,h:3}];PILL.forEach(p=>box(p.x,p.y,p.w,p.h));
 const TABLES=[];
 function addTable(x,y,w,h,label){const t={x,y,w,h,label,chairs:[]};box(x,y,w,h);
- const a=Math.floor(w*.25),b=Math.floor(w*.75),c=Math.floor(h*.25),d=Math.floor(h*.75);
- if(w>=h){for(const i of new Set([a,b])){t.chairs.push({x:x+i,y:y-1,dir:'s'});t.chairs.push({x:x+i,y:y+h,dir:'n'});}}
- else{for(const j of new Set([c,d])){t.chairs.push({x:x-1,y:y+j,dir:'e'});t.chairs.push({x:x+w,y:y+j,dir:'w'});}}
+ const mx=x+Math.floor(w/2),my=y+Math.floor(h/2),P=(cx,cy,dir)=>t.chairs.push({x:cx,y:cy,dir});
+ if(w===h){P(mx,y-1,'s');P(mx,y+h,'n');P(x-1,my,'e');P(x+w,my,'w');}
+ else{const two=n=>[1,n-2];
+  if(w>h){for(const i of two(w)){P(x+i,y-1,'s');P(x+i,y+h,'n');}P(x-1,my,'e');P(x+w,my,'w');}
+  else{for(const j of two(h)){P(x-1,y+j,'e');P(x+w,y+j,'w');}P(mx,y-1,'s');P(mx,y+h,'n');}}
  TABLES.push(t);}
-addTable(2,4,7,2,'左上长桌');addTable(3,9,3,5,'左墙桌');addTable(8,9,3,5,'左中桌');
-addTable(15,4,3,5,'包间大桌');addTable(22,4,5,2,'北窗桌');addTable(22,10,4,4,'中庭方桌');
-addTable(28,13,4,3,'东厅一桌');addTable(34,13,4,3,'东厅二桌');addTable(13,18,5,3,'厅心长桌');
-addTable(21,20,5,3,'南厅大桌');addTable(28,19,4,3,'东南桌');addTable(35,19,3,3,'角落桌');
-const SOFAS=[];function aSofa(x,y,w,dir){const s={x,y,w,dir,seats:[]};box(x,y,w,1);
- for(let i=0;i<w;i++)s.seats.push({x:x+i,y,dir});SOFAS.push(s);}
-aSofa(3,20,4,'s');aSofa(8,22,4,'s');aSofa(35,9,4,'w');
+addTable(3,4,6,3,'左上长桌');addTable(3,9,3,6,'左墙桌');addTable(8,9,3,6,'左中桌');
+addTable(15,4,3,6,'包间大桌');addTable(21,4,6,2,'北窗桌');addTable(13,18,6,3,'厅心长桌');
+addTable(22,12,3,3,'中庭方桌');addTable(27,12,3,3,'东厅一桌');addTable(32,12,3,3,'东厅二桌');
+addTable(22,17,3,3,'南厅大桌');addTable(27,17,3,3,'东南桌');addTable(32,17,3,3,'角落桌');
+const SOFAS=[];function aSofa(x,y,len,dir){const vert=dir==='e'||dir==='w';const s={x,y,dir,vert,seats:[]};
+ box(x,y,vert?1:len,vert?len:1);
+ for(let i=0;i<len;i++)s.seats.push({x:x+(vert?0:i),y:y+(vert?i:0),dir});SOFAS.push(s);}
+aSofa(3,20,4,'s');aSofa(9,21,4,'w');aSofa(34,8,3,'e');
+box(3,22,4,4); // 地形图大桌（沙发↔电视之间）
+box(38,8,1,3); // 东墙电视
 box(4,26,4,1); // TV
 box(14,24,6,1); // counter
 [{x:10,y:3},{x:20,y:22},{x:26,y:23},{x:11,y:17}].forEach(p=>grid[p.y][p.x]=1);
