@@ -16,8 +16,13 @@ globalThis.document={getElementById:()=>({getContext:c2d}),createElement:()=>({w
 tail='''
 const A=globalThis.__api; let t=0; const step=1/30;
 let sideWalk=0, walkFrames=0;          // 走路时侧身的帧数 —— 改成平移后应当恒为 0
+let sideAny=0, allFrames=0;            // 任何状态下侧身的帧数（躺着除外，躺姿本来就是侧的）
+const sideWhere={};
 const run=(min)=>{const s={};for(let i=0;i<30*60*min;i++){t+=step*1000;const f=RAF.shift();if(!f)break;f(t);
   for(const p of A.people){
+    if(!p.lying){ allFrames++;
+      if(p.dir==='e'||p.dir==='w'){ sideAny++;
+        const k=(p.role==='regular'||!p.castKey?p.state:p.task)||'?'; sideWhere[k]=(sideWhere[k]||0)+1; } }
     if(p.path&&p.path.length){ walkFrames++; if(p.dir==='e'||p.dir==='w') sideWalk++; }
     if(!p.castKey) continue; const o=s[p.castKey]=s[p.castKey]||{n:0,lie:0,st:new Set(),x:[]};
     o.n++; if(p.lying)o.lie++; o.st.add(p.role==='regular'?p.state:p.task); o.x.push(Math.round(p.px)); }}
@@ -35,6 +40,7 @@ for(const k of Object.keys(A.CAST)){const p=A.people.find(x=>x.castKey===k);
 
 console.log('\\n── 走路一律平移（含随机顾客，不只是常驻） ──');
 console.log(`走路帧 ${walkFrames}，其中侧身 ${sideWalk} 帧  ${sideWalk===0?'← 通过':'← 失败'}`);
+console.log(`站着/坐着共 ${allFrames} 帧，其中侧身 ${sideAny} 帧  ${sideAny===0?'← 通过':'← 失败: '+JSON.stringify(sideWhere)}`);
 
 console.log('\\n── 体型对照（站姿总高 = 腿 + 躯干） ──');
 for(const k of Object.keys(A.CAST)){const p=A.people.find(x=>x.castKey===k);const g=A.personGeom(p);
