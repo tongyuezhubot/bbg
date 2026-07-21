@@ -1,0 +1,2494 @@
+<title>BBG Boardgame — 桌游店</title>
+
+<style>
+  :root {
+    --ground:   #e3e0d5;
+    --ink:      #23201a;
+    --ink-soft: #5c574a;
+    --ink-faint:#8a8474;
+    --rule:     #b3ae9c;
+    --amber:    #b5761c;
+    --amber-lit:#e8a33d;
+    --frame:    #6b4226;
+    --shadow:   rgba(35,32,26,.18);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --ground:#171512; --ink:#ded6c6; --ink-soft:#a49b88; --ink-faint:#6f6858;
+      --rule:#3a342b; --amber:#e8a33d; --amber-lit:#ffc978; --frame:#3d2716;
+      --shadow:rgba(0,0,0,.5);
+    }
+  }
+  :root[data-theme="dark"] {
+    --ground:#171512; --ink:#ded6c6; --ink-soft:#a49b88; --ink-faint:#6f6858;
+    --rule:#3a342b; --amber:#e8a33d; --amber-lit:#ffc978; --frame:#3d2716;
+    --shadow:rgba(0,0,0,.5);
+  }
+  :root[data-theme="light"] {
+    --ground:#e3e0d5; --ink:#23201a; --ink-soft:#5c574a; --ink-faint:#8a8474;
+    --rule:#b3ae9c; --amber:#b5761c; --amber-lit:#e8a33d; --frame:#6b4226;
+    --shadow:rgba(35,32,26,.18);
+  }
+
+  body {
+    background: var(--ground);
+    color: var(--ink);
+    font: 400 15px/1.6 ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+    padding: clamp(14px, 2.4vw, 34px);
+    -webkit-font-smoothing: antialiased;
+  }
+  .wrap { max-width: 1400px; margin: 0 auto; display: flex; flex-direction: column; gap: 18px; }
+
+  header { display: flex; flex-wrap: wrap; align-items: baseline; gap: 8px 18px; }
+  h1 {
+    font: 700 clamp(28px, 4vw, 46px)/1 Georgia, "Iowan Old Style", "Palatino Linotype", serif;
+    letter-spacing: -.015em; text-wrap: balance;
+  }
+  h1 .amp { color: var(--amber); font-style: italic; }
+  .tagline { color: var(--ink-soft); font-size: 13px; letter-spacing: .04em; }
+  .openlamp {
+    display: inline-flex; align-items: center; gap: 7px;
+    font-size: 11px; letter-spacing: .18em; text-transform: uppercase;
+    color: var(--amber); margin-left: auto;
+  }
+  .openlamp i {
+    width: 8px; height: 8px; background: var(--amber-lit); display: block;
+    box-shadow: 0 0 8px var(--amber-lit); animation: pulse 2.4s ease-in-out infinite;
+  }
+  @keyframes pulse { 0%,100% { opacity: .45 } 50% { opacity: 1 } }
+
+  .screen {
+    border: 3px solid var(--frame); background: #241c14; padding: 6px;
+    box-shadow: 0 14px 34px -14px var(--shadow); overflow: hidden;
+  }
+  canvas { display: block; width: 100%; height: auto; image-rendering: pixelated; image-rendering: crisp-edges; }
+
+  @media (prefers-reduced-motion: reduce) { .openlamp i { animation: none; opacity: .9 } }
+</style>
+
+<div class="wrap">
+  <header>
+    <h1>BBG <span class="amp">Boardgame</span></h1>
+    <p class="tagline">桌游店 · 平面图 · 营业中的一天</p>
+    <span class="openlamp"><i></i>Open</span>
+  </header>
+
+  <div class="screen">
+    <canvas id="stage" width="1280" height="896" role="img"
+            aria-label="桌游店俯视平面图，像素风格：中央包间、右上小房间、左下沙发电视区、四面书架墙，顾客自动走动、选游戏、入座开局与结账。"></canvas>
+  </div>
+</div>
+
+<script>
+(() => {
+"use strict";
+
+/* ══ 画布 ══════════════════════════════════════════════ */
+const TW = 16, GW = 40, GH = 28;
+const NW = GW * TW, NH = GH * TW;            // 640 × 448
+const SCALE = 2;
+
+const view = document.getElementById("stage");
+const vctx = view.getContext("2d");
+vctx.imageSmoothingEnabled = false;
+
+const mk = (w, h) => { const c = document.createElement("canvas"); c.width = w; c.height = h; return c; };
+const scene = mk(NW, NH), sx = scene.getContext("2d");
+const lightC = mk(NW, NH), lx = lightC.getContext("2d");
+const floorTex = mk(NW, NH), fx = floorTex.getContext("2d");
+sx.imageSmoothingEnabled = false;
+
+/* ══ 调色板 ═══════════════════════════════════════════ */
+const C = {
+  plank:  ["#a9723f", "#a06a3a", "#b17b47"],
+  seam:   "#7d5129",
+  rug:    "#6d6d72", rug2: "#8b8b93", rugEdge: "#4a4a4f", rugPat: "#5b5b61",
+  wallHi: "#efe0c6", wall: "#e2d0b2", wallLo: "#cbb694",
+  wains:  "#7a4a2b", wainsHi: "#96603a",
+  shelfW: "#6b4226", shelfHi: "#8a5834", shelfDk: "#4a2c18",
+  tableEdge: "#6b4226", tableTop: "#a0703c", tableHi: "#bb8b52", tableLo: "#83592c",
+  counter:"#5c3a20", counterTop: "#8a5c33",
+  sofa:   "#4a5a6b", sofaHi: "#5f7386", sofaDk: "#33404d",
+  pillar: "#8d8778", pillarHi: "#a8a294", pillarDk: "#5f5a4e",
+  plant:  "#3f7d4e", plant2: "#56a066", pot: "#a45a3c",
+  dark:   "#2a1d12", lamp: "#ffd48a",
+};
+const SPINE = ["#c94f3d","#e0913a","#e6c34a","#4e9d5c","#3c7fb1","#7a5aa8","#c96a9b","#d8d2c2","#4a6b8a","#b8452f"];
+const SKIN  = ["#f2c9a0","#e0aa79","#c88a5c","#9c6440","#7a4a2e","#fadfc0"];
+const HAIR  = ["#2c2118","#5a3820","#8c5a2b","#c9a24a","#a83c2c","#4c4a52","#d8d2c2","#3b5b7a"];
+const SHIRT = ["#c94f3d","#3c7fb1","#4e9d5c","#e0913a","#7a5aa8","#c96a9b","#2f6b4f","#d8d2c2","#4a6b8a"];
+const PANTS = ["#3a4a63","#5a4632","#2f3a33","#6b3f4a","#454049"];
+
+/* ══ 3×5 像素字体 ═════════════════════════════════════ */
+const GLYPH = {
+  A:"111101111101101", B:"110101110101110", C:"111100100100111", D:"110101101101110",
+  E:"111100110100111", F:"111100110100100", G:"111100101101111", H:"101101111101101",
+  I:"111010010010111", J:"001001001101111", K:"101101110101101", L:"100100100100111",
+  M:"101111111101101", N:"110101101101101", O:"111101101101111", P:"111101111100100",
+  Q:"111101101111001", R:"111101111110101", S:"111100111001111", T:"111010010010010",
+  U:"101101101101111", V:"101101101101010", W:"101101111111101", X:"101101010101101",
+  Y:"101101010010010", Z:"111001010100111",
+  0:"111101101101111", 1:"010110010010111", 2:"111001111100111", 3:"111001111001111",
+  4:"101101111001001", 5:"111100111001111", 6:"111100111101111", 7:"111001001001001",
+  8:"111101111101111", 9:"111101111001111",
+  " ":"000000000000000", "&":"110110111101111", ".":"000000000000010",
+  "-":"000000111000000", "'":"010010000000000", "!":"010010010000010", "?":"111001010000010",
+};
+function pxText(ctx, str, x, y, color) {
+  ctx.fillStyle = color;
+  let cx = x;
+  for (const ch of str.toUpperCase()) {
+    const g = GLYPH[ch];
+    if (g) for (let r = 0; r < 5; r++) for (let c = 0; c < 3; c++)
+      if (g[r * 3 + c] === "1") ctx.fillRect(cx + c, y + r, 1, 1);
+    cx += 4;
+  }
+}
+const textW = s => s.length * 4 - 1;
+
+/* 放大 + 字距可调的小字，给标题栏用 */
+function pxTextS(ctx, str, x, y, color, scale, track) {
+  ctx.fillStyle = color;
+  let cx = x;
+  for (const ch of str.toUpperCase()) {
+    const g = GLYPH[ch];
+    if (g) for (let r = 0; r < 5; r++) for (let c = 0; c < 3; c++)
+      if (g[r * 3 + c] === "1") ctx.fillRect(cx + c * scale, y + r * scale, scale, scale);
+    cx += (3 + track) * scale;
+  }
+}
+const textWS = (s, scale, track) => (s.length * (3 + track) - track) * scale;
+
+/* 标题栏专用的粗体大写字，8×10 */
+const BIG = {
+  B: ["BBBBBB..", "BBBBBBB.", "BB....BB", "BB....BB", "BBBBBBB.",
+      "BBBBBBB.", "BB....BB", "BB....BB", "BBBBBBB.", "BBBBBB.."],
+  G: [".BBBBBB.", "BBBBBBBB", "BB....BB", "BB......", "BB......",
+      "BB..BBBB", "BB..BBBB", "BB....BB", "BBBBBBBB", ".BBBBBB."],
+};
+function drawBig(ctx, str, x, y, scale, color) {
+  for (let i = 0; i < str.length; i++) {
+    const g = BIG[str[i]];
+    if (!g) continue;
+    ctx.fillStyle = color;
+    for (let r = 0; r < g.length; r++) for (let c = 0; c < 8; c++)
+      if (g[r][c] !== ".") ctx.fillRect(x + i * 11 * scale + c * scale, y + r * scale, scale, scale);
+  }
+}
+const bigW = (s, scale) => (s.length * 11 - 3) * scale;
+
+function pxCircle(ctx, cx, cy, r, color) {
+  ctx.fillStyle = color;
+  for (let y = -r; y <= r; y++) {
+    const w = Math.floor(Math.sqrt(Math.max(0, r * r - y * y)));
+    if (w > 0) ctx.fillRect(cx - w, cy + y, w * 2, 1);
+  }
+}
+function pxEllipse(ctx, cx, cy, rx, ry, color) {
+  ctx.fillStyle = color;
+  for (let y = -ry; y <= ry; y++) {
+    const w = Math.floor(rx * Math.sqrt(Math.max(0, 1 - (y * y) / (ry * ry))));
+    if (w > 0) ctx.fillRect(cx - w, cy + y, w * 2, 1);
+  }
+}
+
+/* ══ 地图 ═════════════════════════════════════════════ */
+const grid = Array.from({ length: GH }, () => new Uint8Array(GW));
+const box = (x, y, w, h, v = 1) => { for (let j = y; j < y + h; j++) for (let i = x; i < x + w; i++)
+  if (i >= 0 && j >= 0 && i < GW && j < GH) grid[j][i] = v; };
+const walkable = (x, y) => x >= 0 && y >= 0 && x < GW && y < GH && grid[y][x] === 0;
+
+// 外墙
+box(0, 0, GW, 2);            // 上（含墙面高度）
+box(0, 2, 1, GH - 2);        // 左
+box(GW - 1, 2, 1, GH - 2);   // 右
+box(0, GH - 1, GW, 1);       // 下
+grid[25][GW - 1] = 0; grid[26][GW - 1] = 0;      // 大门（右墙，通向底部走廊）
+
+// 内墙（画成满墙书架）
+const IWALL_V = [], IWALL_H = [];
+const addIWallV = (x, y, h) => { IWALL_V.push({ x, y, h }); box(x, y, 1, h); };
+const addIWallH = (x, y, w) => { IWALL_H.push({ x, y, w }); box(x, y, w, 1); };
+
+addIWallV(12, 2, 12);        // 中央包间 左墙（rows 2–13）· 门在 14–15
+addIWallH(12, 16, 8);        // 中央包间 下墙
+addIWallV(19, 2, 14);        // 中央包间 右墙（整面封死）
+addIWallV(28, 2, 6);         // 东北角 边界墙
+addIWallH(23, 7, 6);         // 北厅 下墙（cols 23–28）
+addIWallH(22, 24, GW - 22);  // 底部走廊 上墙
+
+// 东北角：不属于店内，整块挖掉
+const VOID = { x: 29, y: 0, w: GW - 29, h: 8 };
+box(VOID.x, VOID.y, VOID.w, VOID.h);
+
+// 靠墙书架（横向）
+const shelves = [];
+const addShelf = (x, y, w) => { shelves.push({ x, y, w }); box(x, y, w, 1); };
+addShelf(2, 2, 10); addShelf(14, 2, 5); addShelf(20, 2, 8);
+addShelf(9, 26, 5); addShelf(24, 26, 13);
+
+// 靠墙书架（竖向）
+const wallShelves = [];
+const addWallShelf = (x, y, h, dir) => { wallShelves.push({ x, y, h, dir }); box(x, y, 1, h); };
+addWallShelf(1, 2, 7, "w"); addWallShelf(1, 14, 5, "w");
+addWallShelf(13, 2, 11, "w");            // 包间内侧
+addWallShelf(38, 11, 6, "e");
+
+// 柱子
+const PILLARS = [{ x: 31, y: 8, w: 3, h: 3 }];
+PILLARS.forEach(p => box(p.x, p.y, p.w, p.h));
+
+/* ── 桌台 ── */
+const GAMES = ["Sunhollow", "Iron Foxes", "Duckbill Bay", "Tavern Tally",
+               "Cinderpine", "Long Ferry", "Meeple March", "Moonrise"];
+const TABLES = [];
+function addTable(x, y, w, h, label) {
+  const t = { x, y, w, h, label, chairs: [], game: null, rollT: 0, id: TABLES.length };
+  box(x, y, w, h);
+  const a = Math.floor(w * .25), b = Math.floor(w * .75);
+  const c = Math.floor(h * .25), d = Math.floor(h * .75);
+  if (w >= h) {
+    for (const i of new Set([a, b])) {
+      t.chairs.push({ x: x + i, y: y - 1, dir: "s", by: null, t });
+      t.chairs.push({ x: x + i, y: y + h, dir: "n", by: null, t });
+    }
+  } else {
+    for (const j of new Set([c, d])) {
+      t.chairs.push({ x: x - 1, y: y + j, dir: "e", by: null, t });
+      t.chairs.push({ x: x + w, y: y + j, dir: "w", by: null, t });
+    }
+  }
+  TABLES.push(t);
+}
+addTable(2, 4, 7, 2, "左上长桌");
+addTable(3, 9, 3, 5, "左墙桌");
+addTable(8, 9, 3, 5, "左中桌");
+addTable(15, 4, 3, 5, "包间大桌");
+addTable(22, 4, 5, 2, "北窗桌");
+addTable(22, 10, 4, 4, "中庭方桌");
+addTable(28, 13, 4, 3, "东厅一桌");
+addTable(34, 13, 4, 3, "东厅二桌");
+addTable(13, 18, 5, 3, "厅心长桌");
+addTable(21, 20, 5, 3, "南厅大桌");
+addTable(28, 19, 4, 3, "东南桌");
+addTable(35, 19, 3, 3, "角落桌");
+
+/* ── 沙发 / 电视 / 收银 ── */
+const SOFAS = [];
+function addSofa(x, y, len, dir) {                   // dir = 坐者朝向；东西向朝向 ⇒ 沙发竖排
+  const vert = dir === "e" || dir === "w";
+  const s = { x, y, len, dir, vert, w: vert ? 1 : len, h: vert ? len : 1, seats: [] };
+  box(x, y, s.w, s.h);
+  for (let i = 0; i < len; i++)
+    s.seats.push({ x: x + (vert ? 0 : i), y: y + (vert ? i : 0), dir, by: null, sofa: s });
+  SOFAS.push(s);
+}
+addSofa(3, 20, 4, "s");        // 正对电视
+addSofa(9, 21, 4, "w");        // 竖排，侧对电视，与上一张成 L
+addSofa(35, 9, 4, "s");        // 东厅休息长凳
+
+const TV = { x: 3, y: 26, w: 4 };  box(TV.x, TV.y, TV.w, 1);
+const COFFEE = { x: 6, y: 23, w: 2 }; box(COFFEE.x, COFFEE.y, COFFEE.w, 1);
+const counter = { x: 14, y: 24, w: 6 };  box(counter.x, counter.y, counter.w, 1);
+
+const PLANTS = [{ x: 10, y: 3 }, { x: 20, y: 22 }, { x: 26, y: 23 }, { x: 11, y: 17 }];
+PLANTS.forEach(p => grid[p.y][p.x] = 1);
+
+// 满铺地毯：铺满整个店内地面（外墙以内），入口方砖会再盖回去
+const RUG = { x: 1, y: 2, w: GW - 2, h: GH - 3 };
+
+const LAMPS = [
+  { x: 5, y: 5 }, { x: 4.5, y: 11 }, { x: 9.5, y: 11 },
+  { x: 16, y: 6 }, { x: 16, y: 13 },
+  { x: 24, y: 4 },
+  { x: 23.5, y: 11 }, { x: 29.5, y: 14 }, { x: 35.5, y: 14 },
+  { x: 15, y: 19 }, { x: 23, y: 21 }, { x: 29.5, y: 20 }, { x: 36, y: 20 },
+  { x: 6, y: 22 }, { x: 17, y: 23 }, { x: 30, y: 25 },
+];
+
+const COUNTER_SPOTS = [{ x: 15, y: 23 }, { x: 17, y: 23 }, { x: 19, y: 23 }];
+const STAFF_POST = { x: 16, y: 25 };
+const SPAWN = { x: 38, y: 25 };
+
+/* ══ A* ═══════════════════════════════════════════════ */
+function findPath(sxg, syg, tx, ty) {
+  if (sxg === tx && syg === ty) return [];
+  const key = (x, y) => y * GW + x;
+  const open = [{ x: sxg, y: syg, g: 0, f: 0, p: null }];
+  const seen = new Map([[key(sxg, syg), 0]]);
+  const D = [[1,0],[-1,0],[0,1],[0,-1]];
+  let guard = 0;
+  while (open.length && guard++ < 12000) {
+    let bi = 0;
+    for (let i = 1; i < open.length; i++) if (open[i].f < open[bi].f) bi = i;
+    const cur = open.splice(bi, 1)[0];
+    if (cur.x === tx && cur.y === ty) {
+      const out = []; let n = cur;
+      while (n.p) { out.unshift({ x: n.x, y: n.y }); n = n.p; }
+      return out;
+    }
+    for (const [dx, dy] of D) {
+      const nx = cur.x + dx, ny = cur.y + dy;
+      if (!(nx === tx && ny === ty) && !walkable(nx, ny)) continue;
+      if (nx < 0 || ny < 0 || nx >= GW || ny >= GH) continue;
+      const g = cur.g + 1, k = key(nx, ny);
+      if (seen.has(k) && seen.get(k) <= g) continue;
+      seen.set(k, g);
+      open.push({ x: nx, y: ny, g, f: g + Math.abs(nx - tx) + Math.abs(ny - ty), p: cur });
+    }
+  }
+  return null;
+}
+
+/* ══ 地面 ═════════════════════════════════════════════ */
+const PLANKS = ["#a9723f", "#a06a3a", "#b17b47", "#9c6738", "#b5804d", "#a46e3c"];
+const hash = (a, b) => (((a * 73856093) ^ (b * 19349663)) >>> 0);
+
+(function buildFloor() {
+  /* ── 错缝长条木地板 ── */
+  const PL = 48;
+  for (let y = 0; y < GH; y++) {
+    const Y = y * TW, off = (y % 3) * 16;
+    for (let px = -PL; px < NW; px += PL) {
+      const X = px + off, s = hash(X + 999, y);
+      fx.fillStyle = PLANKS[s % PLANKS.length];
+      fx.fillRect(X, Y, PL, TW);
+      fx.fillStyle = "rgba(255,235,200,.09)"; fx.fillRect(X, Y, PL, 1);
+      fx.fillStyle = "rgba(58,30,10,.50)";    fx.fillRect(X, Y + TW - 1, PL, 1);
+      fx.fillStyle = "rgba(58,30,10,.45)";    fx.fillRect(X, Y, 1, TW);
+      fx.fillStyle = "rgba(255,235,200,.06)"; fx.fillRect(X + 1, Y, 1, TW - 1);
+      fx.fillStyle = "rgba(70,40,16,.12)";
+      fx.fillRect(X + 4, Y + 3 + (s >> 3) % 4, PL - 9, 1);
+      fx.fillRect(X + 2, Y + 9 + (s >> 7) % 4, PL - 6, 1);
+      if ((s >> 11) % 5 === 0) {                       // 节疤
+        const kx = X + 8 + (s >> 13) % (PL - 18), ky = Y + 5 + (s >> 17) % 6;
+        fx.fillStyle = "rgba(70,40,16,.16)"; fx.fillRect(kx - 1, ky - 1, 5, 4);
+        fx.fillStyle = "rgba(70,40,16,.32)"; fx.fillRect(kx, ky, 3, 2);
+      }
+    }
+  }
+
+  /* ── 满铺地毯（暖调灰，编织纹）：先铺满，入口方砖随后盖回去 ── */
+  const rx = RUG.x * TW, ry = RUG.y * TW, rw = RUG.w * TW, rh = RUG.h * TW;
+  fx.fillStyle = C.rugEdge; fx.fillRect(rx, ry, rw, rh);
+  fx.fillStyle = C.rug;     fx.fillRect(rx + 3, ry + 3, rw - 6, rh - 6);
+  for (let j = 0; j < rh - 6; j += 2) {                 // 编织横纹
+    fx.fillStyle = j % 4 ? "rgba(255,255,255,.030)" : "rgba(0,0,0,.045)";
+    fx.fillRect(rx + 3, ry + 3 + j, rw - 6, 1);
+  }
+  // 满铺就不能用小地毯那种密条纹（会糊成一片），改成拉开距离的小菱形
+  fx.fillStyle = C.rugPat;
+  const DIA = [1, 3, 5, 3, 1];
+  for (let j = 24; j < rh - 24; j += 32)
+    for (let i = 24; i < rw - 24; i += 32)
+      for (let k = 0; k < 5; k++)
+        fx.fillRect(rx + i - (DIA[k] >> 1), ry + j - 2 + k, DIA[k], 1);
+  fx.fillStyle = C.rug2;                                // 沿墙压一圈边线
+  fx.fillRect(rx + 9, ry + 9, rw - 18, 1); fx.fillRect(rx + 9, ry + rh - 10, rw - 18, 1);
+  fx.fillRect(rx + 9, ry + 9, 1, rh - 18); fx.fillRect(rx + rw - 10, ry + 9, 1, rh - 18);
+
+  /* ── 入口走廊：方砖（压在地毯上，进门这段仍是硬地） ── */
+  for (let y = 25; y <= 26; y++) for (let x = 21; x < GW - 1; x++) {
+    for (let j = 0; j < 2; j++) for (let i = 0; i < 2; i++) {
+      const t = ((x * 2 + i) + (y * 2 + j)) % 2;
+      const X = x * TW + i * 8, Y = y * TW + j * 8;
+      fx.fillStyle = t ? "#8e8476" : "#7c7267";
+      fx.fillRect(X, Y, 8, 8);
+      fx.fillStyle = "rgba(255,255,255,.06)"; fx.fillRect(X + 1, Y + 1, 6, 1);
+      fx.fillStyle = "rgba(0,0,0,.20)"; fx.fillRect(X, Y, 8, 1); fx.fillRect(X, Y, 1, 8);
+    }
+  }
+  fx.fillStyle = "rgba(0,0,0,.22)";                     // 方砖与地毯的接缝
+  fx.fillRect(21 * TW, 25 * TW, 1, TW * 2);
+  fx.fillRect(21 * TW, 25 * TW, (GW - 22) * TW, 1);
+
+  /* ── 门口地垫 ── */
+  fx.fillStyle = "#4f4436"; fx.fillRect(35 * TW, 25 * TW + 2, TW * 3, TW - 4);
+  fx.fillStyle = "#6b6049"; fx.fillRect(35 * TW + 2, 25 * TW + 4, TW * 3 - 4, TW - 8);
+  for (let i = 0; i < TW * 3 - 6; i += 3) {
+    fx.fillStyle = "rgba(0,0,0,.14)"; fx.fillRect(35 * TW + 3 + i, 25 * TW + 5, 1, TW - 10);
+  }
+  pxText(fx, "OPEN", 35 * TW + 14, 25 * TW + 6, "#bda674");
+
+  /* ── 接触阴影：贴着所有实体的一圈暗边 ── */
+  const solid = (i, j) => !(i >= 0 && j >= 0 && i < GW && j < GH) || grid[j][i] === 1;
+  const AO = 6;
+  for (let y = 0; y < GH; y++) for (let x = 0; x < GW; x++) {
+    if (grid[y][x]) continue;
+    const X = x * TW, Y = y * TW;
+    let g;
+    if (solid(x, y - 1)) {
+      g = fx.createLinearGradient(0, Y, 0, Y + AO + 2);
+      g.addColorStop(0, "rgba(30,16,4,.46)"); g.addColorStop(1, "rgba(30,16,4,0)");
+      fx.fillStyle = g; fx.fillRect(X, Y, TW, AO + 2);
+    }
+    if (solid(x - 1, y)) {
+      g = fx.createLinearGradient(X, 0, X + AO, 0);
+      g.addColorStop(0, "rgba(30,16,4,.38)"); g.addColorStop(1, "rgba(30,16,4,0)");
+      fx.fillStyle = g; fx.fillRect(X, Y, AO, TW);
+    }
+    if (solid(x + 1, y)) {
+      g = fx.createLinearGradient(X + TW, 0, X + TW - AO, 0);
+      g.addColorStop(0, "rgba(30,16,4,.38)"); g.addColorStop(1, "rgba(30,16,4,0)");
+      fx.fillStyle = g; fx.fillRect(X + TW - AO, Y, AO, TW);
+    }
+    if (solid(x, y + 1)) {
+      g = fx.createLinearGradient(0, Y + TW, 0, Y + TW - 4);
+      g.addColorStop(0, "rgba(30,16,4,.24)"); g.addColorStop(1, "rgba(30,16,4,0)");
+      fx.fillStyle = g; fx.fillRect(X, Y + TW - 4, TW, 4);
+    }
+  }
+})();
+
+/* ══ 墙 ═══════════════════════════════════════════════ */
+function drawWindow(ctx, x, night, time) {
+  const y = 5, w = TW * 3, h = 17;
+  const skyTop = night > .55 ? "#141c34" : night > .25 ? "#c9743c" : "#7fbcd8";
+  const skyBot = night > .55 ? "#26305a" : night > .25 ? "#edb977" : "#c6e6f0";
+  ctx.fillStyle = "#3d2716"; ctx.fillRect(x - 3, y - 3, w + 6, h + 8);
+  ctx.fillStyle = C.wains;   ctx.fillRect(x - 2, y - 2, w + 4, h + 6);
+  const g = ctx.createLinearGradient(0, y, 0, y + h);
+  g.addColorStop(0, skyTop); g.addColorStop(1, skyBot);
+  ctx.fillStyle = g; ctx.fillRect(x, y, w, h);
+  if (night < .25) {                                   // 白天：远处树影 + 云
+    ctx.fillStyle = "rgba(90,140,110,.55)";
+    ctx.fillRect(x + 3, y + h - 6, 9, 6); ctx.fillRect(x + 6, y + h - 9, 4, 3);
+    ctx.fillRect(x + 30, y + h - 5, 11, 5); ctx.fillRect(x + 33, y + h - 8, 5, 3);
+    ctx.fillStyle = "rgba(255,255,255,.55)";
+    const cx = x + ((time * 5) % (w + 20)) - 10;
+    ctx.fillRect(cx, y + 3, 9, 2); ctx.fillRect(cx + 2, y + 2, 5, 1);
+  } else if (night > .55) {                            // 夜：星 + 月
+    ctx.fillStyle = "rgba(255,255,255,.75)";
+    ctx.fillRect(x + 6, y + 3, 1, 1); ctx.fillRect(x + 19, y + 6, 1, 1);
+    ctx.fillRect(x + 33, y + 2, 1, 1); ctx.fillRect(x + 41, y + 9, 1, 1);
+    ctx.fillStyle = "rgba(255,246,214,.85)"; ctx.fillRect(x + 27, y + 3, 4, 4);
+    ctx.fillStyle = skyTop; ctx.fillRect(x + 26, y + 2, 3, 3);
+  }
+  ctx.fillStyle = "rgba(255,255,255,.20)"; ctx.fillRect(x, y, w, 2);   // 玻璃反光
+  ctx.fillStyle = "rgba(255,255,255,.10)"; ctx.fillRect(x + 2, y + 2, 3, h - 4);
+  ctx.fillStyle = C.wains;                                            // 窗棂
+  ctx.fillRect(x + w / 2 - 1, y, 2, h); ctx.fillRect(x, y + 8, w, 2);
+  ctx.fillStyle = C.wainsHi; ctx.fillRect(x, y + 8, w, 1);
+  // 窗帘
+  ctx.fillStyle = "#9c4a42"; ctx.fillRect(x - 2, y - 2, 6, h + 3); ctx.fillRect(x + w - 4, y - 2, 6, h + 3);
+  ctx.fillStyle = "#b85e52"; ctx.fillRect(x - 2, y - 2, 2, h + 3); ctx.fillRect(x + w - 4, y - 2, 2, h + 3);
+  ctx.fillStyle = "rgba(0,0,0,.22)"; ctx.fillRect(x + 3, y - 2, 1, h + 3); ctx.fillRect(x + w - 1, y - 2, 1, h + 3);
+  // 窗台 + 小盆栽
+  ctx.fillStyle = "#8a5c33"; ctx.fillRect(x - 4, y + h + 1, w + 8, 3);
+  ctx.fillStyle = "#a87345"; ctx.fillRect(x - 4, y + h + 1, w + 8, 1);
+  ctx.fillStyle = C.pot;   ctx.fillRect(x + w - 16, y + h - 3, 6, 4);
+  ctx.fillStyle = C.plant; ctx.fillRect(x + w - 15, y + h - 7, 4, 4);
+  ctx.fillStyle = C.plant2;ctx.fillRect(x + w - 14, y + h - 9, 2, 3);
+}
+
+function drawPoster(ctx, x, kind) {
+  const y = 6, w = 26, h = 17;
+  ctx.fillStyle = "#3d2716"; ctx.fillRect(x - 2, y - 2, w + 4, h + 4);
+  ctx.fillStyle = "#8a5c33"; ctx.fillRect(x - 1, y - 1, w + 2, h + 2);
+  ctx.fillStyle = "#e8dcc0"; ctx.fillRect(x, y, w, h);
+  if (kind === 0) {                                    // 米宝海报
+    ctx.fillStyle = "#c94f3d";
+    ctx.fillRect(x + 10, y + 3, 5, 3); ctx.fillRect(x + 8, y + 6, 9, 4);
+    ctx.fillRect(x + 6, y + 7, 13, 2); ctx.fillRect(x + 8, y + 10, 3, 4); ctx.fillRect(x + 14, y + 10, 3, 4);
+    ctx.fillStyle = "#9c8a63"; ctx.fillRect(x + 3, y + 15, 20, 1);
+  } else if (kind === 1) {                             // 骰子海报
+    ctx.fillStyle = "#3c7fb1"; ctx.fillRect(x + 4, y + 4, 9, 9);
+    ctx.fillStyle = "#e8dcc0";
+    ctx.fillRect(x + 6, y + 6, 2, 2); ctx.fillRect(x + 10, y + 10, 2, 2);
+    ctx.fillStyle = "#e0913a"; ctx.fillRect(x + 15, y + 7, 7, 7);
+    ctx.fillStyle = "#e8dcc0"; ctx.fillRect(x + 18, y + 10, 2, 2);
+  } else {                                             // 地图海报
+    ctx.fillStyle = "#c9b78f"; ctx.fillRect(x + 3, y + 3, 20, 12);
+    ctx.fillStyle = "#7a9c6a"; ctx.fillRect(x + 5, y + 5, 7, 5); ctx.fillRect(x + 14, y + 8, 6, 5);
+    ctx.fillStyle = "#5f88ae"; ctx.fillRect(x + 12, y + 4, 3, 10);
+    ctx.fillStyle = "#c94f3d"; ctx.fillRect(x + 18, y + 5, 2, 2);
+  }
+  ctx.fillStyle = "rgba(255,255,255,.14)"; ctx.fillRect(x, y, w, 1);
+}
+
+function drawChalkboard(ctx, x) {
+  const y = 5, w = 44, h = 19;
+  ctx.fillStyle = "#3d2716"; ctx.fillRect(x - 2, y - 2, w + 4, h + 4);
+  ctx.fillStyle = "#8a5c33"; ctx.fillRect(x - 1, y - 1, w + 2, h + 2);
+  ctx.fillStyle = "#2c3a30"; ctx.fillRect(x, y, w, h);
+  ctx.fillStyle = "rgba(255,255,255,.05)"; ctx.fillRect(x + 2, y + 2, w - 4, h - 4);
+  pxText(ctx, "TODAY", x + 3, y + 3, "#e8dcc0");
+  pxText(ctx, "DEMO TABLE", x + 3, y + 9, "#a8c4a0");
+  pxText(ctx, "FREE PLAY", x + 3, y + 14, "#a8c4a0");
+  ctx.fillStyle = "#e8dcc0"; ctx.fillRect(x + w - 7, y + h - 3, 4, 2);   // 粉笔
+}
+
+function drawWallClock(ctx, x) {
+  const cy = 14, r = 8;
+  ctx.fillStyle = "#3d2716"; pxCircle(ctx, x, cy, r, "#3d2716");
+  pxCircle(ctx, x, cy, r - 1, "#8a5c33");
+  pxCircle(ctx, x, cy, r - 2, "#f0e6d2");
+  ctx.fillStyle = "#8a8474";
+  ctx.fillRect(x - 1, cy - r + 3, 2, 1); ctx.fillRect(x - 1, cy + r - 4, 2, 1);
+  ctx.fillRect(x - r + 3, cy - 1, 1, 2); ctx.fillRect(x + r - 4, cy - 1, 1, 2);
+  const p = clock / DAY, mins = 10 * 60 + p * 12 * 60;
+  const ha = ((mins / 60) % 12) / 12 * Math.PI * 2 - Math.PI / 2;
+  const ma = (mins % 60) / 60 * Math.PI * 2 - Math.PI / 2;
+  ctx.fillStyle = "#3a3025";
+  for (let i = 0; i < 4; i++) ctx.fillRect(Math.round(x + Math.cos(ha) * i), Math.round(cy + Math.sin(ha) * i), 1, 1);
+  for (let i = 0; i < 6; i++) ctx.fillRect(Math.round(x + Math.cos(ma) * i), Math.round(cy + Math.sin(ma) * i), 1, 1);
+  ctx.fillStyle = "#c94f3d"; ctx.fillRect(x, cy, 1, 1);
+}
+
+function drawOuterWalls(ctx, night, time) {
+  // 墙体
+  ctx.fillStyle = C.wallLo; ctx.fillRect(0, 0, NW, 32);
+  ctx.fillStyle = C.wall;   ctx.fillRect(0, 3, NW, 24);
+  ctx.fillStyle = C.wallHi; ctx.fillRect(0, 3, NW, 2);
+  for (let i = 0; i < NW; i += 5) {                    // 灰泥竖纹
+    ctx.fillStyle = (i / 5) % 2 ? "rgba(255,255,255,.030)" : "rgba(0,0,0,.022)";
+    ctx.fillRect(i, 4, 2, 22);
+  }
+  ctx.fillStyle = "#5c3a20"; ctx.fillRect(0, 0, NW, 3);          // 顶檐
+  ctx.fillStyle = "#7a4f2c"; ctx.fillRect(0, 0, NW, 1);
+  ctx.fillStyle = "#6b4226"; ctx.fillRect(0, 25, NW, 2);         // 挂镜线
+  ctx.fillStyle = "#8a5c33"; ctx.fillRect(0, 25, NW, 1);
+  ctx.fillStyle = C.wains;  ctx.fillRect(0, 27, NW, 5);          // 墙裙
+  ctx.fillStyle = C.wainsHi;ctx.fillRect(0, 27, NW, 1);
+  for (let i = 6; i < NW; i += 14) { ctx.fillStyle = "rgba(0,0,0,.18)"; ctx.fillRect(i, 28, 1, 4); }
+  ctx.fillStyle = "rgba(0,0,0,.22)"; ctx.fillRect(0, 30, NW, 2); // 墙脚阴影
+
+  // 墙面陈设（col 29 往右是非店内区块，不放东西）
+  drawWindow(ctx, 2 * TW, night, time);
+  drawPoster(ctx, 6 * TW + 4, 0);
+  const sign = "BOARD GAMES";
+  const sw = textW(sign) + 12, sxp = Math.round(11.5 * TW - sw / 2);
+  ctx.fillStyle = "#2e1c10"; ctx.fillRect(sxp - 1, 5, sw + 2, 16);
+  ctx.fillStyle = C.shelfHi; ctx.fillRect(sxp, 6, sw, 14);
+  ctx.fillStyle = C.shelfW;  ctx.fillRect(sxp + 1, 7, sw - 2, 12);
+  ctx.fillStyle = "rgba(255,255,255,.10)"; ctx.fillRect(sxp + 1, 7, sw - 2, 1);
+  pxText(ctx, sign, sxp + 6, 10, "#f6e4bc");
+  ctx.fillStyle = "#e8b24a"; ctx.fillRect(sxp + 3, 9, 1, 8); ctx.fillRect(sxp + sw - 4, 9, 1, 8);
+  drawWindow(ctx, 15 * TW, night, time);
+  drawChalkboard(ctx, 19 * TW + 2);
+  drawWindow(ctx, 24 * TW, night, time);
+  drawWallClock(ctx, 28 * TW + 6);
+
+  // 侧墙 / 下墙
+  ctx.fillStyle = C.wains;
+  ctx.fillRect(0, 32, TW, NH - 32);
+  ctx.fillRect(NW - TW, 32, TW, NH - 32);
+  ctx.fillRect(0, NH - TW, NW, TW);
+  ctx.fillStyle = C.wainsHi;
+  ctx.fillRect(0, 32, TW, 2); ctx.fillRect(NW - TW, 32, TW, 2); ctx.fillRect(0, NH - TW, NW, 2);
+  ctx.fillStyle = "rgba(0,0,0,.20)";
+  for (let j = 40; j < NH; j += 14) { ctx.fillRect(2, j, 12, 1); ctx.fillRect(NW - 14, j, 12, 1); }
+  for (let i = 6; i < NW; i += 14) ctx.fillRect(i, NH - TW + 3, 1, TW - 4);
+
+  // 大门
+  ctx.fillStyle = "#2e1c10"; ctx.fillRect(NW - TW, 25 * TW, TW, TW * 2);
+  ctx.fillStyle = "#503722"; ctx.fillRect(NW - TW + 2, 25 * TW + 2, TW - 4, TW * 2 - 4);
+  ctx.fillStyle = "#1c1409"; ctx.fillRect(NW - TW + 4, 25 * TW + 5, TW - 7, TW * 2 - 10);
+  const gl = ctx.createLinearGradient(NW - TW + 4, 0, NW, 0);
+  gl.addColorStop(0, night > .5 ? "rgba(40,50,90,.9)" : "rgba(150,200,225,.85)");
+  gl.addColorStop(1, "rgba(255,255,255,0)");
+  ctx.fillStyle = gl; ctx.fillRect(NW - TW + 4, 25 * TW + 5, TW - 7, TW * 2 - 10);
+  ctx.fillStyle = "#c9a24a"; ctx.fillRect(NW - TW + 4, 26 * TW - 1, 2, 3);
+}
+
+/* 一格书架里塞的东西：书脊 / 正面陈列盒 / 平摊堆 / 空位 */
+function spineRun(ctx, x, y, len, vertical, seed0) {
+  let p = 0, seed = seed0 | 1;
+  const nx = () => (seed = (seed * 1103515245 + 12345) & 0x7fffffff);
+  while (p < len - 2) {
+    const r = nx() % 100;
+    if (!vertical) {
+      if (r < 8) { p += 2 + (nx() % 3); continue; }                    // 空位
+      if (r < 22) {                                                    // 正面陈列盒
+        const bw = 7 + (nx() % 2);
+        if (p + bw > len - 1) break;
+        const col = SPINE[nx() % SPINE.length];
+        ctx.fillStyle = "rgba(0,0,0,.4)"; ctx.fillRect(x + p, y + 1, bw, 9);
+        ctx.fillStyle = col; ctx.fillRect(x + p, y, bw, 9);
+        ctx.fillStyle = "rgba(255,255,255,.30)"; ctx.fillRect(x + p, y, bw, 1);
+        ctx.fillStyle = "rgba(0,0,0,.28)"; ctx.fillRect(x + p + 1, y + 3, bw - 2, 4);
+        ctx.fillStyle = "rgba(255,255,255,.45)"; ctx.fillRect(x + p + 2, y + 4, 2, 2);
+        p += bw + 1; continue;
+      }
+      if (r < 30) {                                                    // 平摊一小堆
+        const bw = 6 + (nx() % 3);
+        if (p + bw > len - 1) break;
+        for (let k = 0; k < 3; k++) {
+          ctx.fillStyle = SPINE[nx() % SPINE.length];
+          ctx.fillRect(x + p + (k % 2), y + 6 - k * 2, bw - (k % 2), 2);
+          ctx.fillStyle = "rgba(0,0,0,.22)"; ctx.fillRect(x + p + (k % 2), y + 7 - k * 2, bw - (k % 2), 1);
+        }
+        p += bw + 1; continue;
+      }
+      const s = 2 + (nx() % 3), h = 6 + (nx() % 4);                    // 书脊
+      if (p + s > len - 1) break;
+      const col = SPINE[nx() % SPINE.length];
+      const lean = (nx() % 12) === 0 ? 1 : 0;
+      ctx.fillStyle = col; ctx.fillRect(x + p, y + (9 - h) + lean, s, h - lean);
+      ctx.fillStyle = "rgba(255,255,255,.22)"; ctx.fillRect(x + p, y + (9 - h) + lean, 1, h - lean);
+      ctx.fillStyle = "rgba(0,0,0,.28)"; ctx.fillRect(x + p + s - 1, y + (9 - h) + lean, 1, h - lean);
+      if (s > 2 && h > 7) { ctx.fillStyle = "rgba(255,255,255,.35)"; ctx.fillRect(x + p + 1, y + (9 - h) + 2 + lean, s - 2, 1); }
+      p += s + 1;
+    } else {
+      if (r < 8) { p += 2 + (nx() % 3); continue; }
+      if (r < 20) {                                                    // 竖架上的正面盒
+        const bh = 7 + (nx() % 2);
+        if (p + bh > len - 1) break;
+        ctx.fillStyle = SPINE[nx() % SPINE.length]; ctx.fillRect(x - 1, y + p, 9, bh);
+        ctx.fillStyle = "rgba(255,255,255,.28)"; ctx.fillRect(x - 1, y + p, 9, 1);
+        ctx.fillStyle = "rgba(0,0,0,.26)"; ctx.fillRect(x, y + p + 2, 7, 3);
+        p += bh + 1; continue;
+      }
+      const s = 2 + (nx() % 3);
+      if (p + s > len - 1) break;
+      ctx.fillStyle = SPINE[nx() % SPINE.length];
+      const wgt = 6 + (nx() % 3);
+      ctx.fillRect(x, y + p, wgt, s);
+      ctx.fillStyle = "rgba(255,255,255,.20)"; ctx.fillRect(x, y + p, wgt, 1);
+      ctx.fillStyle = "rgba(0,0,0,.28)"; ctx.fillRect(x, y + p + s - 1, wgt, 1);
+      p += s + 1;
+    }
+  }
+}
+function drawIWallV(ctx, w) {
+  const x = w.x * TW, y = w.y * TW, h = w.h * TW;
+  ctx.fillStyle = C.shelfDk; ctx.fillRect(x, y - 8, TW, h + 8);
+  ctx.fillStyle = C.shelfW;  ctx.fillRect(x + 1, y - 7, TW - 2, h + 6);
+  ctx.fillStyle = C.shelfHi; ctx.fillRect(x + 1, y - 7, TW - 2, 2);
+  spineRun(ctx, x + 4, y - 4, h + 2, true, w.x * 977 + w.y * 31);
+  ctx.fillStyle = "rgba(0,0,0,.3)"; ctx.fillRect(x + TW - 2, y - 7, 2, h + 6);
+}
+function drawIWallH(ctx, w) {
+  const x = w.x * TW, y = w.y * TW, wd = w.w * TW;
+  ctx.fillStyle = C.shelfDk; ctx.fillRect(x, y - 10, wd, TW + 10);
+  ctx.fillStyle = C.shelfW;  ctx.fillRect(x + 1, y - 9, wd - 2, TW + 8);
+  ctx.fillStyle = C.shelfHi; ctx.fillRect(x + 1, y - 9, wd - 2, 2);
+  spineRun(ctx, x + 2, y - 7, wd - 4, false, w.x * 613 + w.y * 17);
+  ctx.fillStyle = C.shelfHi; ctx.fillRect(x + 1, y + 2, wd - 2, 2);
+  spineRun(ctx, x + 2, y + 4, wd - 4, false, w.x * 811 + w.y * 53);
+}
+function drawShelf(ctx, s) {
+  const x = s.x * TW, y = s.y * TW, w = s.w * TW;
+  ctx.fillStyle = C.shelfDk; ctx.fillRect(x, y - 10, w, TW + 10);
+  ctx.fillStyle = C.shelfW;  ctx.fillRect(x + 1, y - 9, w - 2, TW + 8);
+  for (let row = 0; row < 2; row++) {
+    const by = y - 8 + row * 11;
+    spineRun(ctx, x + 2, by, w - 4, false, s.x * 31 + row * 17 + s.y * 7);
+    ctx.fillStyle = C.shelfHi; ctx.fillRect(x + 1, by + 9, w - 2, 2);
+  }
+}
+function drawWallShelf(ctx, s) {
+  const x = s.x * TW, y = s.y * TW, h = s.h * TW;
+  ctx.fillStyle = C.shelfDk; ctx.fillRect(x, y - 6, TW, h + 6);
+  ctx.fillStyle = C.shelfW;  ctx.fillRect(x + 1, y - 5, TW - 2, h + 4);
+  for (let i = 0; i < s.h; i++) {
+    const by = y + i * TW - 3;
+    spineRun(ctx, x + 4, by, TW - 2, true, s.x * 13 + i * 29);
+    ctx.fillStyle = C.shelfHi; ctx.fillRect(x + 1, by + TW - 3, TW - 2, 2);
+  }
+}
+function drawPillar(ctx, p) {
+  const x = p.x * TW, y = p.y * TW, w = p.w * TW, h = p.h * TW;
+  ctx.fillStyle = "rgba(0,0,0,.25)"; ctx.fillRect(x + 2, y + h - 2, w - 4, 4);
+  ctx.fillStyle = C.pillarDk; ctx.fillRect(x, y - 14, w, h + 12);
+  ctx.fillStyle = C.pillar;   ctx.fillRect(x + 2, y - 12, w - 4, h + 8);
+  ctx.fillStyle = C.pillarHi; ctx.fillRect(x + 2, y - 12, w - 4, 3);
+  ctx.fillStyle = "rgba(0,0,0,.18)";
+  for (let i = 6; i < h + 8; i += 9) ctx.fillRect(x + 2, y - 12 + i, w - 4, 1);
+  ctx.fillStyle = C.pillarDk; ctx.fillRect(x, y + h - 6, w, 6);
+  ctx.fillStyle = C.pillarHi; ctx.fillRect(x, y + h - 6, w, 1);
+}
+
+/* ══ 家具 ═════════════════════════════════════════════ */
+function drawChair(ctx, ch) {
+  const x = ch.x * TW, y = ch.y * TW;
+  ctx.fillStyle = "rgba(0,0,0,.16)"; ctx.fillRect(x + 3, y + 12, 10, 3);
+  ctx.fillStyle = C.shelfDk; ctx.fillRect(x + 3, y + 4, 10, 9);
+  ctx.fillStyle = C.shelfHi; ctx.fillRect(x + 4, y + 5, 8, 6);
+  ctx.fillStyle = C.shelfW;
+  if (ch.dir === "e") ctx.fillRect(x + 1, y + 1, 3, 12);
+  else if (ch.dir === "w") ctx.fillRect(x + 12, y + 1, 3, 12);
+  else if (ch.dir === "s") ctx.fillRect(x + 2, y + 1, 12, 3);
+  else ctx.fillRect(x + 2, y + 12, 12, 3);
+}
+/* 桌面常驻小物：即使空桌也有生活痕迹 */
+function drawTableClutter(ctx, t, cx, cy, w, h) {
+  const s = hash(t.x + 7, t.y + 3);
+  const kinds = s % 4;
+  if (kinds === 0) {                                   // 骰盘
+    pxCircle(ctx, cx - w / 3, cy, 5, "#6b4226");
+    pxCircle(ctx, cx - w / 3, cy, 4, "#8a5834");
+    ctx.fillStyle = "#f6f1e4";
+    ctx.fillRect(cx - w / 3 - 2, cy - 1, 2, 2); ctx.fillRect(cx - w / 3 + 1, cy + 1, 2, 2);
+  } else if (kinds === 1) {                            // 马克杯 + 杯垫
+    pxCircle(ctx, cx - w / 3, cy + 1, 4, "#5c4a30");
+    ctx.fillStyle = "#f0e6d2"; ctx.fillRect(cx - w / 3 - 3, cy - 3, 6, 6);
+    ctx.fillStyle = "#6b4226"; ctx.fillRect(cx - w / 3 - 2, cy - 2, 4, 2);
+    ctx.fillStyle = "#f0e6d2"; ctx.fillRect(cx - w / 3 + 3, cy - 2, 1, 3);
+  } else if (kinds === 2) {                            // 记分本 + 铅笔
+    ctx.fillStyle = "#e8dcc0"; ctx.fillRect(cx - w / 3 - 4, cy - 4, 9, 8);
+    ctx.fillStyle = "#c9b78f"; ctx.fillRect(cx - w / 3 - 4, cy - 4, 9, 1);
+    ctx.fillStyle = "rgba(90,70,45,.55)";
+    for (let i = 0; i < 3; i++) ctx.fillRect(cx - w / 3 - 3, cy - 2 + i * 2, 7, 1);
+    ctx.fillStyle = "#e0b040"; ctx.fillRect(cx - w / 3 + 5, cy - 3, 1, 7);
+  } else {                                             // 零食碗
+    pxCircle(ctx, cx - w / 3, cy, 5, "#7a4a2b");
+    pxCircle(ctx, cx - w / 3, cy - 1, 4, "#a06e39");
+    ctx.fillStyle = "#e8c46a";
+    ctx.fillRect(cx - w / 3 - 2, cy - 2, 2, 2); ctx.fillRect(cx - w / 3 + 1, cy - 3, 2, 2);
+    ctx.fillRect(cx - w / 3 - 1, cy, 2, 2);
+  }
+  if ((s >> 5) % 3 === 0) {                            // 一副牌
+    ctx.fillStyle = "#3a5f8a"; ctx.fillRect(cx + w / 3 - 2, cy - 4, 6, 8);
+    ctx.fillStyle = "#5f88b5"; ctx.fillRect(cx + w / 3 - 2, cy - 4, 6, 1);
+    ctx.fillStyle = "rgba(255,255,255,.35)"; ctx.fillRect(cx + w / 3, cy - 2, 2, 3);
+  }
+}
+
+function drawTable(ctx, t, time) {
+  const x = t.x * TW, y = t.y * TW, w = t.w * TW, h = t.h * TW;
+  ctx.fillStyle = "rgba(0,0,0,.22)"; ctx.fillRect(x + 2, y + h - 3, w - 4, 5);
+  ctx.fillStyle = C.tableEdge; ctx.fillRect(x, y - 6, w, h + 4);
+  ctx.fillStyle = C.tableLo;   ctx.fillRect(x + 1, y - 5, w - 2, h + 2);
+  ctx.fillStyle = C.tableTop;  ctx.fillRect(x + 2, y - 4, w - 4, h);
+  ctx.fillStyle = C.tableHi;   ctx.fillRect(x + 2, y - 4, w - 4, 2);
+  ctx.fillStyle = "rgba(0,0,0,.07)";
+  for (let i = 6; i < w - 6; i += 7) ctx.fillRect(x + i, y - 2, 1, h - 3);
+  ctx.fillStyle = "rgba(0,0,0,.14)"; ctx.fillRect(x + 2, y + h - 3, w - 4, 1);
+  drawTableClutter(ctx, t, x + w / 2, y + h / 2 - 2, w, h);
+
+  const seated = t.chairs.filter(c => c.by).length;
+  if (seated >= 1 && t.game) {
+    const bx = x + Math.floor(w / 2) - 11, by = y + Math.floor(h / 2) - 8;
+    ctx.fillStyle = "#e8dcc0"; ctx.fillRect(bx, by, 22, 14);
+    ctx.fillStyle = "#c9b78f"; ctx.fillRect(bx + 1, by + 1, 20, 12);
+    for (let i = 0; i < 5; i++) for (let j = 0; j < 3; j++)
+      if ((i + j) % 2 === 0) { ctx.fillStyle = "#9d8a63"; ctx.fillRect(bx + 2 + i * 4, by + 2 + j * 4, 4, 4); }
+    ctx.fillStyle = "#8c3f3a"; ctx.fillRect(bx - 6, by + 4, 5, 7);
+    ctx.fillStyle = "#b25a4e"; ctx.fillRect(bx - 6, by + 4, 5, 1);
+    t.chairs.forEach((c, i) => {
+      if (!c.by) return;
+      const px = bx + 3 + ((i * 5) % 16), py = by + 3 + ((i * 7) % 8);
+      ctx.fillStyle = c.by.shirt;
+      ctx.fillRect(px, py + 1, 3, 2); ctx.fillRect(px + 1, py, 1, 1);
+    });
+    const roll = t.rollT > 0;
+    const dy = roll ? Math.floor(Math.sin(time * 30 + t.id) * 2) : 0;
+    ctx.fillStyle = "#f6f1e4"; ctx.fillRect(bx + 25, by + 8 + dy, 4, 4);
+    ctx.fillStyle = "#3a3025";
+    const pip = roll ? Math.floor(time * 12 + t.id) % 3 : (t.id % 3);
+    ctx.fillRect(bx + 26, by + 9 + dy, 1, 1);
+    if (pip > 0) ctx.fillRect(bx + 27, by + 10 + dy, 1, 1);
+    if (pip > 1) ctx.fillRect(bx + 26, by + 11 + dy, 1, 1);
+  }
+  if (t.game) {                                     // 空桌不挂牌，免得满屏 FREE
+    const label = t.game.toUpperCase(), lw = textW(label);
+    ctx.fillStyle = "rgba(0,0,0,.34)";
+    ctx.fillRect(x + Math.floor(w / 2 - lw / 2) - 2, y - 13, lw + 4, 8);
+    pxText(ctx, label, x + Math.floor(w / 2 - lw / 2), y - 12, "#ffd48a");
+  }
+}
+const PILLOW = ["#c96a9b", "#e0913a", "#c94f3d", "#e6c34a"];
+function drawSofa(ctx, s) {
+  const x = s.x * TW, y = s.y * TW, w = s.w * TW, h = s.h * TW;
+  ctx.fillStyle = "rgba(0,0,0,.22)"; ctx.fillRect(x + 2, y + h - 2, w - 4, 4);
+  if (!s.vert) {                                     // 横排 · 靠背在上
+    ctx.fillStyle = C.sofaDk; ctx.fillRect(x, y - 11, w, TW + 9);
+    ctx.fillStyle = C.sofa;   ctx.fillRect(x + 1, y - 10, w - 2, TW + 7);
+    ctx.fillStyle = C.sofaHi; ctx.fillRect(x + 2, y - 9, w - 4, 5);       // 靠背顶
+    ctx.fillStyle = "rgba(0,0,0,.18)"; ctx.fillRect(x + 2, y - 4, w - 4, 2);
+    for (let i = 0; i < s.len; i++) {                                     // 坐垫
+      const cx = x + i * TW;
+      ctx.fillStyle = C.sofa;   ctx.fillRect(cx + 3, y - 1, TW - 6, 9);
+      ctx.fillStyle = C.sofaHi; ctx.fillRect(cx + 3, y - 1, TW - 6, 2);
+      ctx.fillStyle = "rgba(0,0,0,.22)"; ctx.fillRect(cx + 2, y - 2, 1, 11);
+    }
+    ctx.fillStyle = C.sofaDk;                                             // 扶手
+    ctx.fillRect(x, y - 6, 4, TW + 4); ctx.fillRect(x + w - 4, y - 6, 4, TW + 4);
+    ctx.fillStyle = C.sofaHi;
+    ctx.fillRect(x, y - 6, 4, 2); ctx.fillRect(x + w - 4, y - 6, 4, 2);
+    ctx.fillStyle = PILLOW[s.x % PILLOW.length];                          // 抱枕
+    ctx.fillRect(x + 6, y - 6, 6, 6);
+    ctx.fillStyle = "rgba(255,255,255,.22)"; ctx.fillRect(x + 6, y - 6, 6, 1);
+  } else {                                           // 竖排 · 靠背在右（坐者朝西）
+    ctx.fillStyle = C.sofaDk; ctx.fillRect(x, y - 6, TW, h + 4);
+    ctx.fillStyle = C.sofa;   ctx.fillRect(x + 1, y - 5, TW - 2, h + 2);
+    ctx.fillStyle = C.sofaHi; ctx.fillRect(x + 1, y - 5, TW - 8, 3);
+    for (let i = 0; i < s.len; i++) {                                     // 坐垫
+      const cy = y + i * TW;
+      ctx.fillStyle = C.sofa;   ctx.fillRect(x + 1, cy + 2, 9, TW - 4);
+      ctx.fillStyle = C.sofaHi; ctx.fillRect(x + 1, cy + 2, 9, 2);
+      ctx.fillStyle = "rgba(0,0,0,.22)"; ctx.fillRect(x + 1, cy + 1, 9, 1);
+    }
+    ctx.fillStyle = C.sofaDk; ctx.fillRect(x + 10, y - 5, 6, h + 2);      // 靠背
+    ctx.fillStyle = C.sofaHi; ctx.fillRect(x + 10, y - 5, 2, h + 2);
+    ctx.fillStyle = C.sofaDk;                                             // 扶手
+    ctx.fillRect(x, y - 5, TW, 4); ctx.fillRect(x, y + h - 3, TW, 4);
+    ctx.fillStyle = PILLOW[(s.y + 1) % PILLOW.length];
+    ctx.fillRect(x + 2, y + 4, 6, 6);
+    ctx.fillStyle = "rgba(255,255,255,.22)"; ctx.fillRect(x + 2, y + 4, 6, 1);
+  }
+}
+function drawCoffeeTable(ctx) {
+  const x = COFFEE.x * TW, y = COFFEE.y * TW, w = COFFEE.w * TW;
+  ctx.fillStyle = "rgba(0,0,0,.20)"; ctx.fillRect(x + 3, y + TW - 3, w - 6, 4);
+  ctx.fillStyle = C.tableEdge; ctx.fillRect(x + 1, y + 2, w - 2, TW - 5);
+  ctx.fillStyle = C.tableTop;  ctx.fillRect(x + 2, y + 3, w - 4, TW - 7);
+  ctx.fillStyle = C.tableHi;   ctx.fillRect(x + 2, y + 3, w - 4, 1);
+  ctx.fillStyle = "#f0e6d2"; ctx.fillRect(x + 6, y + 6, 4, 4);            // 马克杯
+  ctx.fillStyle = "#6b4226"; ctx.fillRect(x + 7, y + 7, 2, 1);
+  ctx.fillStyle = "#f0e6d2"; ctx.fillRect(x + 10, y + 6, 1, 2);
+  ctx.fillStyle = "#c94f3d"; ctx.fillRect(x + 17, y + 7, 7, 3);           // 一盒小游戏
+  ctx.fillStyle = "rgba(255,255,255,.25)"; ctx.fillRect(x + 17, y + 7, 7, 1);
+}
+function drawTV(ctx, time) {
+  const x = TV.x * TW, y = TV.y * TW, w = TV.w * TW;
+  // 电视柜
+  ctx.fillStyle = "rgba(0,0,0,.24)"; ctx.fillRect(x + 2, y + TW - 3, w - 4, 4);
+  ctx.fillStyle = "#3a2718"; ctx.fillRect(x, y + 2, w, TW - 3);
+  ctx.fillStyle = "#5c3f26"; ctx.fillRect(x + 1, y + 3, w - 2, TW - 5);
+  ctx.fillStyle = "#78522f"; ctx.fillRect(x + 1, y + 3, w - 2, 2);
+  ctx.fillStyle = "rgba(0,0,0,.28)";
+  ctx.fillRect(x + w / 3, y + 6, 1, TW - 8); ctx.fillRect(x + w * 2 / 3, y + 6, 1, TW - 8);
+  ctx.fillStyle = "#c9b78f";                                    // 柜门拉手
+  ctx.fillRect(x + w / 3 - 5, y + 10, 3, 1); ctx.fillRect(x + w / 3 + 3, y + 10, 3, 1);
+  // 柜上小物
+  ctx.fillStyle = "#2a272e"; ctx.fillRect(x + w - 16, y - 2, 11, 5);
+  ctx.fillStyle = Math.sin(time * 2.2) > 0 ? "#8fe0a0" : "#3d6b4a"; ctx.fillRect(x + w - 14, y, 1, 1);
+
+  // 屏幕
+  const sw = w - 14, sh = 26, sxp = x + 7, syp = y - 26;
+  ctx.fillStyle = "#15141a"; ctx.fillRect(sxp - 2, syp - 2, sw + 4, sh + 4);
+  ctx.fillStyle = "#2e2b34"; ctx.fillRect(sxp - 1, syp - 1, sw + 2, sh + 2);
+  ctx.fillStyle = "#0d1418"; ctx.fillRect(sxp, syp, sw, sh);
+  // 画面：滚动色带 + 扫描线 + 闪烁
+  const flick = .78 + Math.sin(time * 11) * .06 + Math.sin(time * 2.7) * .1;
+  const bands = [["#2f5f8a", 0], ["#3f8fae", 7], ["#68b39a", 13], ["#254b6b", 19]];
+  for (const [col, off] of bands) {
+    const by = syp + ((off + Math.floor(time * 6)) % sh);
+    ctx.globalAlpha = flick;
+    ctx.fillStyle = col;
+    ctx.fillRect(sxp, by, sw, Math.min(6, syp + sh - by));
+    ctx.globalAlpha = 1;
+  }
+  // 画面里晃动的小剪影
+  ctx.fillStyle = `rgba(14,20,26,${flick})`;
+  const fig = Math.round(Math.sin(time * 1.6) * 6);
+  ctx.fillRect(sxp + sw / 2 - 3 + fig, syp + sh - 12, 6, 9);
+  ctx.fillRect(sxp + sw / 2 - 2 + fig, syp + sh - 16, 4, 4);
+  // 扫描线 + 玻璃反光
+  ctx.fillStyle = "rgba(0,0,0,.18)";
+  for (let i = 0; i < sh; i += 3) ctx.fillRect(sxp, syp + i, sw, 1);
+  ctx.fillStyle = `rgba(220,240,255,${.10 + flick * .06})`;
+  ctx.beginPath();
+  ctx.moveTo(sxp + 2, syp + sh - 2); ctx.lineTo(sxp + sw * .42, syp + 1);
+  ctx.lineTo(sxp + sw * .62, syp + 1); ctx.lineTo(sxp + 2, syp + sh - 2);
+  ctx.closePath(); ctx.fill();
+  // 底座
+  ctx.fillStyle = "#1c1a20"; ctx.fillRect(x + w / 2 - 3, y - 1, 6, 3);
+  ctx.fillStyle = "#2e2b34"; ctx.fillRect(x + w / 2 - 8, y + 1, 16, 2);
+}
+function drawVoid(ctx) {
+  const x = VOID.x * TW, y = VOID.y * TW, w = VOID.w * TW, h = VOID.h * TW;
+  ctx.fillStyle = "#1a1712"; ctx.fillRect(x, y, w, h);
+  ctx.fillStyle = "#2c261d"; ctx.fillRect(x + 3, y, w - 3, h - 3);
+  // 混凝土纹理
+  ctx.fillStyle = "rgba(255,255,255,.03)";
+  for (let j = 0; j < h - 3; j += 7) for (let i = 0; i < w - 3; i += 11)
+    ctx.fillRect(x + 4 + i + ((j / 7) % 2) * 5, y + 1 + j, 7, 3);
+  // 底纹：极淡的斜向排线，衬托上面的字
+  ctx.fillStyle = "rgba(255,255,255,.022)";
+  for (let d = -h; d < w; d += 6)
+    for (let j = 0; j < h - 3; j++) {
+      const i = d + j;
+      if (i >= 3 && i < w - 3) ctx.fillRect(x + i, y + j, 1, 1);
+    }
+  // 与店面交界的墙口
+  ctx.fillStyle = C.wains;   ctx.fillRect(x, y, 3, h);
+  ctx.fillStyle = C.wainsHi; ctx.fillRect(x, y, 1, h);
+  ctx.fillStyle = C.wains;   ctx.fillRect(x, y + h - 3, w, 3);
+  ctx.fillStyle = C.wainsHi; ctx.fillRect(x, y + h - 3, w, 1);
+  // 投向店内的阴影
+  const g = ctx.createLinearGradient(0, y + h, 0, y + h + 22);
+  g.addColorStop(0, "rgba(0,0,0,.34)"); g.addColorStop(1, "rgba(0,0,0,0)");
+  ctx.fillStyle = g; ctx.fillRect(x, y + h, w, 22);
+  const g2 = ctx.createLinearGradient(x - 18, 0, x, 0);
+  g2.addColorStop(0, "rgba(0,0,0,0)"); g2.addColorStop(1, "rgba(0,0,0,.28)");
+  ctx.fillStyle = g2; ctx.fillRect(x - 18, y, 18, h);
+}
+function drawCounter(ctx, time) {
+  const x = counter.x * TW, y = counter.y * TW, w = counter.w * TW;
+  ctx.fillStyle = "rgba(0,0,0,.22)"; ctx.fillRect(x + 2, y + TW - 2, w - 4, 4);
+  ctx.fillStyle = "#3d2716"; ctx.fillRect(x, y - 12, w, TW + 10);
+  ctx.fillStyle = C.counter; ctx.fillRect(x + 1, y - 11, w - 2, TW + 8);
+  ctx.fillStyle = C.counterTop; ctx.fillRect(x + 1, y - 11, w - 2, 4);
+  for (let i = 1; i < counter.w; i++) { ctx.fillStyle = "rgba(0,0,0,.14)"; ctx.fillRect(x + i * TW, y - 7, 1, TW + 4); }
+  // 待借游戏堆（免费自取）
+  for (let i = 0; i < 4; i++) {
+    const bw = 15 - i, bx = x + 4 + i, by = y - 12 - i * 3;
+    ctx.fillStyle = "rgba(0,0,0,.35)"; ctx.fillRect(bx, by + 1, bw, 3);
+    ctx.fillStyle = SPINE[(i * 3 + 2) % SPINE.length]; ctx.fillRect(bx, by, bw, 3);
+    ctx.fillStyle = "rgba(255,255,255,.28)"; ctx.fillRect(bx, by, bw, 1);
+  }
+  // 借还登记本 + 笔
+  ctx.fillStyle = "#3d2716"; ctx.fillRect(x + 20, y - 14, 12, 9);
+  ctx.fillStyle = "#e8dcc0"; ctx.fillRect(x + 21, y - 13, 10, 7);
+  ctx.fillStyle = "rgba(90,70,45,.5)";
+  for (let i = 0; i < 3; i++) ctx.fillRect(x + 22, y - 11 + i * 2, 8, 1);
+  ctx.fillStyle = "#e0b040"; ctx.fillRect(x + 31, y - 15, 1, 8);
+  // 咖啡机 + 杯
+  ctx.fillStyle = "#4c4a52"; ctx.fillRect(x + w - 26, y - 24, 12, 13);
+  ctx.fillStyle = "#7a7782"; ctx.fillRect(x + w - 25, y - 23, 10, 5);
+  ctx.fillStyle = "#2a272e"; ctx.fillRect(x + w - 22, y - 16, 4, 4);
+  for (let i = 0; i < 3; i++) {
+    ctx.fillStyle = "#f0e6d2"; ctx.fillRect(x + w - 11, y - 20 + i * 4, 5, 3);
+  }
+  for (let i = 0; i < 3; i++) {
+    const t2 = (time * .7 + i * .33) % 1;
+    ctx.fillStyle = `rgba(255,255,255,${(1 - t2) * .28})`;
+    ctx.fillRect(x + w - 20 + Math.round(Math.sin(t2 * 7 + i) * 2), y - 26 - t2 * 11, 2, 2);
+  }
+  // 甜点柜（玻璃罩 + 蛋糕）
+  const gx = x + 36, gy = y - 21;
+  ctx.fillStyle = "#3d2716"; ctx.fillRect(gx - 1, gy - 1, 28, 13);
+  ctx.fillStyle = "#5f4429"; ctx.fillRect(gx, gy, 26, 12);
+  ctx.fillStyle = "rgba(190,225,235,.32)"; ctx.fillRect(gx + 1, gy + 1, 24, 8);
+  ctx.fillStyle = "#e8c46a"; ctx.fillRect(gx + 3, gy + 5, 5, 4);
+  ctx.fillStyle = "#c96a9b"; ctx.fillRect(gx + 3, gy + 4, 5, 1);
+  ctx.fillStyle = "#b5794a"; ctx.fillRect(gx + 11, gy + 5, 5, 4);
+  ctx.fillStyle = "#f0e6d2"; ctx.fillRect(gx + 11, gy + 4, 5, 1);
+  ctx.fillStyle = "#9c6440"; ctx.fillRect(gx + 19, gy + 5, 4, 4);
+  ctx.fillStyle = "rgba(255,255,255,.40)"; ctx.fillRect(gx + 2, gy + 2, 9, 1); ctx.fillRect(gx + 2, gy + 2, 1, 6);
+  ctx.fillStyle = "#8a5c33"; ctx.fillRect(gx, gy + 9, 26, 3);
+  // 糖果罐（自取）
+  ctx.fillStyle = "#bfe3ef"; ctx.fillRect(x + 66, y - 16, 6, 7);
+  ctx.fillStyle = "#c96a9b"; ctx.fillRect(x + 67, y - 13, 2, 2);
+  ctx.fillStyle = "#e6c34a"; ctx.fillRect(x + 69, y - 12, 2, 2);
+  ctx.fillStyle = "#4e9d5c"; ctx.fillRect(x + 67, y - 11, 2, 2);
+  ctx.fillStyle = "rgba(255,255,255,.45)"; ctx.fillRect(x + 67, y - 15, 1, 5);
+  ctx.fillStyle = "#8a5c33"; ctx.fillRect(x + 66, y - 17, 6, 2);
+
+  const s = "BBG";
+  pxText(ctx, s, x + Math.floor(w / 2 - textW(s) / 2), y + 2, "#e8cfa0");
+}
+function drawPlant(ctx, p, time) {
+  const x = p.x * TW, y = p.y * TW;
+  const sway = Math.round(Math.sin(time * 1.1 + p.x) * 1);
+  const kind = (p.x + p.y) % 4;
+  ctx.fillStyle = "rgba(0,0,0,.22)"; ctx.fillRect(x + 3, y + 12, 10, 3);
+  // 花盆
+  const potCol = kind === 1 ? "#8a8474" : kind === 3 ? "#5f7386" : C.pot;
+  ctx.fillStyle = "#6b3220"; ctx.fillRect(x + 3, y + 5, 10, 9);
+  ctx.fillStyle = potCol;    ctx.fillRect(x + 4, y + 6, 8, 7);
+  ctx.fillStyle = "rgba(255,255,255,.20)"; ctx.fillRect(x + 4, y + 6, 8, 1);
+  ctx.fillStyle = "rgba(0,0,0,.22)"; ctx.fillRect(x + 10, y + 7, 2, 6);
+  ctx.fillStyle = "#3a2a18"; ctx.fillRect(x + 5, y + 5, 6, 1);      // 土
+
+  if (kind === 0) {                                   // 高身琴叶榕
+    ctx.fillStyle = "#5a3a20"; ctx.fillRect(x + 7, y - 7, 2, 13);
+    ctx.fillStyle = C.plant;
+    ctx.fillRect(x + 2 + sway, y - 5, 6, 5); ctx.fillRect(x + 8 - sway, y - 9, 6, 5);
+    ctx.fillRect(x + 3 + sway, y - 12, 6, 5);
+    ctx.fillStyle = C.plant2;
+    ctx.fillRect(x + 3 + sway, y - 5, 3, 2); ctx.fillRect(x + 9 - sway, y - 9, 3, 2);
+    ctx.fillRect(x + 4 + sway, y - 12, 3, 2);
+  } else if (kind === 1) {                            // 蕨类（散开）
+    ctx.fillStyle = C.plant;
+    for (let i = 0; i < 5; i++) {
+      const a = -Math.PI / 2 + (i - 2) * .55, L = 9 + (i % 2) * 2;
+      for (let k = 2; k < L; k++)
+        ctx.fillRect(Math.round(x + 8 + Math.cos(a) * k + sway * (k / L)),
+                     Math.round(y + 5 + Math.sin(a) * k), 2, 2);
+    }
+    ctx.fillStyle = C.plant2;
+    ctx.fillRect(x + 6 + sway, y - 6, 2, 2); ctx.fillRect(x + 10 + sway, y - 4, 2, 2);
+  } else if (kind === 2) {                            // 开花的小灌木
+    ctx.fillStyle = C.plant;
+    ctx.fillRect(x + 4 + sway, y - 3, 9, 8); ctx.fillRect(x + 3 + sway, y - 1, 11, 5);
+    ctx.fillRect(x + 6 + sway, y - 6, 5, 4);
+    ctx.fillStyle = C.plant2; ctx.fillRect(x + 5 + sway, y - 2, 4, 3);
+    ctx.fillStyle = "#e0819b";
+    ctx.fillRect(x + 4 + sway, y - 4, 2, 2); ctx.fillRect(x + 10 + sway, y - 2, 2, 2);
+    ctx.fillRect(x + 7 + sway, y - 7, 2, 2);
+    ctx.fillStyle = "#f0a8bc"; ctx.fillRect(x + 10 + sway, y - 2, 1, 1);
+  } else {                                            // 多肉
+    ctx.fillStyle = "#5f9c6a";
+    ctx.fillRect(x + 5, y, 6, 5); ctx.fillRect(x + 4, y + 2, 8, 3);
+    ctx.fillStyle = "#7cbd86";
+    ctx.fillRect(x + 6, y - 2, 4, 4); ctx.fillRect(x + 5, y + 1, 2, 2); ctx.fillRect(x + 9, y + 1, 2, 2);
+    ctx.fillStyle = "#a8dcae"; ctx.fillRect(x + 7, y - 1, 2, 2);
+  }
+}
+function drawLamp(ctx, l) {
+  const x = Math.round(l.x * TW), y = Math.round(l.y * TW);
+  ctx.fillStyle = "#4c4a52"; ctx.fillRect(x + 2, y - 8, 12, 4);
+  ctx.fillStyle = "#6e6b74"; ctx.fillRect(x + 3, y - 8, 10, 1);
+  ctx.fillStyle = C.lamp;   ctx.fillRect(x + 4, y - 4, 8, 2);
+  ctx.fillStyle = "#fff0c8"; ctx.fillRect(x + 6, y - 4, 4, 1);
+}
+
+/* 图纸标题栏：画在右上角那块非店内区域上 */
+function drawTitleBlock(ctx, time) {
+  const X = VOID.x * TW, Y = VOID.y * TW, W = VOID.w * TW, H = VOID.h * TW;
+  const px = X + 13, py = Y + 11, pw = W - 26, ph = H - 24;
+  const AMBER = "#e8a33d", CREAM = "#f2e6cc";
+
+  ctx.fillStyle = "rgba(10,8,5,.55)"; ctx.fillRect(px, py, pw, ph);      // 面板
+  ctx.fillStyle = "#c98a2e"; ctx.fillRect(px, py, pw, 1);                 // 双线框
+  ctx.fillRect(px, py + ph - 1, pw, 1);
+  ctx.fillRect(px, py, 1, ph); ctx.fillRect(px + pw - 1, py, 1, ph);
+  ctx.fillStyle = "rgba(232,163,61,.30)";
+  ctx.fillRect(px + 3, py + 3, pw - 6, 1); ctx.fillRect(px + 3, py + ph - 4, pw - 6, 1);
+  ctx.fillRect(px + 3, py + 3, 1, ph - 6); ctx.fillRect(px + pw - 4, py + 3, 1, ph - 6);
+  ctx.fillStyle = AMBER;                                                  // 四角加粗角标
+  for (const [ax, ay] of [[px, py], [px + pw - 6, py], [px, py + ph - 2], [px + pw - 6, py + ph - 2]])
+    ctx.fillRect(ax, ay, 6, 2);
+  for (const [ax, ay] of [[px, py], [px + pw - 2, py], [px, py + ph - 6], [px + pw - 2, py + ph - 6]])
+    ctx.fillRect(ax, ay, 2, 6);
+
+  const cx = px + pw / 2;
+  let ty = py + 9;
+  const eyebrow = "EST. 2026";                                            // 眉标
+  pxTextS(ctx, eyebrow, Math.round(cx - textWS(eyebrow, 1, 2) / 2), ty, "rgba(232,163,61,.75)", 1, 2);
+  ty += 9;
+
+  const bw = bigW("BBG", 3);                                              // 主字
+  const bx = Math.round(cx - bw / 2);
+  drawBig(ctx, "BBG", bx + 2, ty + 2, 3, "rgba(0,0,0,.55)");              // 落影
+  drawBig(ctx, "BBG", bx, ty, 3, AMBER);
+  ctx.fillStyle = "#ffd88f";                                              // 顶部提亮
+  for (let i = 0; i < 3; i++) ctx.fillRect(bx + i * 33, ty, 24, 3);
+  ty += 38;
+
+  ctx.fillStyle = "rgba(232,163,61,.55)";                                 // 分隔线：中间留空给菱形
+  ctx.fillRect(px + 10, ty, pw / 2 - 20, 1);
+  ctx.fillRect(cx + 10, ty, pw / 2 - 20, 1);
+  ctx.fillStyle = AMBER;                                                  // 菱形节点
+  ctx.fillRect(cx - 1, ty - 4, 2, 1); ctx.fillRect(cx - 2, ty - 3, 4, 1);
+  ctx.fillRect(cx - 3, ty - 2, 6, 1); ctx.fillRect(cx - 4, ty - 1, 8, 1);
+  ctx.fillRect(cx - 3, ty, 6, 1);     ctx.fillRect(cx - 2, ty + 1, 4, 1);
+  ctx.fillRect(cx - 1, ty + 2, 2, 1);
+  ty += 7;
+
+  const sub = "BOARDGAME";                                                // 副标题
+  pxTextS(ctx, sub, Math.round(cx - textWS(sub, 2, 1) / 2), ty, CREAM, 2, 1);
+  ty += 16;
+
+  // 纹章：骰子 + 米宝 + 骰子
+  const my = ty + 1;
+  const die = (dx, pips) => {
+    ctx.fillStyle = "rgba(0,0,0,.5)"; ctx.fillRect(dx + 1, my + 1, 9, 9);
+    ctx.fillStyle = CREAM; ctx.fillRect(dx, my, 9, 9);
+    ctx.fillStyle = "#3a3025";
+    const P = { 1: [[4, 4]], 2: [[2, 2], [6, 6]], 3: [[2, 2], [4, 4], [6, 6]] }[pips];
+    for (const [a, b] of P) ctx.fillRect(dx + a, my + b, 2, 2);
+  };
+  die(Math.round(cx - 24), 2);
+  die(Math.round(cx + 15), 3);
+  ctx.fillStyle = "rgba(0,0,0,.5)";                                       // 米宝
+  ctx.fillRect(Math.round(cx - 4), my - 1, 10, 12);
+  ctx.fillStyle = AMBER;
+  const mx = Math.round(cx - 5);
+  ctx.fillRect(mx + 3, my - 2, 4, 3); ctx.fillRect(mx + 1, my + 1, 8, 3);
+  ctx.fillRect(mx, my + 2, 10, 2);    ctx.fillRect(mx + 1, my + 4, 3, 5);
+  ctx.fillRect(mx + 6, my + 4, 3, 5);
+  ctx.fillStyle = "#ffd88f"; ctx.fillRect(mx + 3, my - 2, 2, 1);
+
+  const foot = "FLOOR PLAN";                                              // 落款
+  pxTextS(ctx, foot, Math.round(cx - textWS(foot, 1, 2) / 2), py + ph - 10, "rgba(242,230,204,.45)", 1, 2);
+}
+
+/* ══ 角色 ═════════════════════════════════════════════ */
+const NAMES = ["阿岚","小满","Ivy","蔓蔓","阿哲","Rook","糖糖","老宋","Pip","阿凛",
+               "小雨","Bram","阿菜","Nia","豆豆","Tess","老K","阿禾","Juno","栗子"];
+const rnd = a => a[Math.floor(Math.random() * a.length)];
+const ri = (a, b) => a + Math.floor(Math.random() * (b - a + 1));
+
+/* 红鸭舌帽：帽檐跟着朝向转 */
+function drawCap(ctx, n, cx, hy, hw, mono) {
+  const F = c => { ctx.fillStyle = mono || c; };
+  F(n.hatColor);                                   // 帽冠：矮而圆，只盖住头顶
+  ctx.fillRect(cx - hw, hy - 4, hw * 2 + 1, 5);
+  ctx.fillRect(cx - hw + 1, hy - 5, hw * 2 - 1, 1);
+  if (!mono) {
+    ctx.fillStyle = "rgba(255,255,255,.22)"; ctx.fillRect(cx - hw + 1, hy - 4, 2, 4);
+    ctx.fillStyle = "rgba(0,0,0,.24)"; ctx.fillRect(cx + hw - 1, hy - 4, 2, 5);
+  }
+  F("#8f2019");                                    // 帽檐，跟着朝向伸出
+  if (n.dir === "e") ctx.fillRect(cx + hw + 1, hy - 2, 3, 2);
+  else if (n.dir === "w") ctx.fillRect(cx - hw - 4, hy - 2, 3, 2);
+  else if (n.dir === "s") {
+    ctx.fillRect(cx - hw - 1, hy, hw * 2 + 3, 2);
+    if (!mono) { ctx.fillStyle = "#a82b22"; ctx.fillRect(cx - hw - 1, hy, hw * 2 + 3, 1); }
+  }
+  F("#8f2019"); ctx.fillRect(cx, hy - 6, 1, 1);    // 顶扣
+}
+
+
+/* 笔记本电脑：坐着时摊开，走路时夹在腋下 */
+function drawLaptop(ctx, n, cx, bodyBase, torsoH, hw, time, mono) {
+  if (n.sitting) return;                          // 坐下时电脑摆在桌上，另行绘制
+  const bx = n.dir === "w" ? cx - hw - 5 : cx + hw - 1;   // 站着时夹在腋下
+  ctx.fillStyle = mono || "#2a2a30"; ctx.fillRect(bx, bodyBase - 6, 5, 5);
+  if (mono) return;
+  ctx.fillStyle = "#4a4a54"; ctx.fillRect(bx, bodyBase - 6, 5, 1);
+  ctx.fillStyle = "#6fbfa8"; ctx.fillRect(bx + 1, bodyBase - 4, 3, 1);
+}
+
+/* 坐着时：电脑摆在身前的桌面上 */
+function drawSeatedLaptop(ctx, n, time) {
+  const ch = n.chair;
+  if (!ch) return;
+  const d = { e: [1, 0], w: [-1, 0], s: [0, 1], n: [0, -1] }[ch.dir] || [0, 1];
+  const cx = Math.round((ch.x + d[0]) * TW + TW / 2);
+  const cy = Math.round((ch.y + d[1]) * TW + TW / 2) - 4;   // 抬到桌面高度
+
+  ctx.fillStyle = "rgba(0,0,0,.28)";                        // 桌面上的影子
+  ctx.fillRect(cx - 8, cy + 4, 16, 3);
+  ctx.fillStyle = "#15151a";                                // 键盘底座
+  ctx.fillRect(cx - 8, cy, 16, 6);
+  ctx.fillStyle = "#2e2e36"; ctx.fillRect(cx - 7, cy + 1, 14, 4);
+  ctx.fillStyle = "#43434e"; ctx.fillRect(cx - 6, cy + 2, 12, 2);
+  ctx.fillStyle = "#26262e"; ctx.fillRect(cx - 2, cy + 4, 4, 1);   // 触控板
+  ctx.fillStyle = "#15151a";                                // 掀起的屏幕
+  ctx.fillRect(cx - 8, cy - 11, 16, 12);
+  ctx.fillStyle = "#22222a"; ctx.fillRect(cx - 7, cy - 10, 14, 10);
+  const glow = .62 + Math.abs(Math.sin(time * 6.5 + n.seed)) * .28;
+  ctx.fillStyle = `rgba(104,180,158,${glow})`;
+  ctx.fillRect(cx - 6, cy - 9, 12, 8);
+  ctx.fillStyle = `rgba(206,242,230,${glow * .85})`;        // 滚动的代码行
+  for (let i = 0; i < 4; i++) {
+    const w = 2 + ((Math.floor(time * 3) + i * 3 + Math.floor(n.seed)) % 8);
+    ctx.fillRect(cx - 5, cy - 8 + i * 2, Math.min(w, 10), 1);
+  }
+  ctx.fillStyle = "rgba(255,255,255,.18)";                  // 屏幕反光
+  ctx.fillRect(cx - 6, cy - 9, 12, 1); ctx.fillRect(cx - 6, cy - 9, 1, 8);
+  ctx.globalCompositeOperation = "lighter";                 // 洒在桌面上的冷光
+  ctx.fillStyle = `rgba(90,170,145,${.10 * glow})`;
+  ctx.fillRect(cx - 11, cy - 2, 22, 9);
+  ctx.globalCompositeOperation = "source-over";
+}
+
+/* ── 发型：按像素点阵写，不再手算坐标 ──
+   网格 13 宽，头是固定的 9 宽（列 2–10），行 0 对齐头顶上方 3 px。
+   H = 发色   h = 高光   . = 透明（露出脸）                        */
+const HAIR_SPR = {
+  short: {
+    s: ["....HHHHH....",
+        "..HHhhhhhHH..",
+        "..HHHHHHHHH..",
+        "..HHHHHHHHH..",
+        "..H.......H..",
+        "..H.......H.."],
+    e: ["....HHHHH....",
+        "..HHhhhhhHHH.",
+        "..HHHHHHHHHH.",
+        "..HHHHHHHHHH.",
+        "..H.......HH.",
+        "..H........H."],
+    n: ["....HHHHH....",
+        "..HHhhhhhHH..",
+        "..HHHHHHHHH..",
+        "..HHHHHHHHH..",
+        "..HHHHHHHHH..",
+        "..HHHHHHHHH..",
+        "..HHHHHHHHH..",
+        "..HdHHHHHdH..",
+        "...HHHHHHH..."],
+  },
+  medium: {
+    s: ["....HHHHH....",
+        "..HHhhhhhHH..",
+        "..HHHHHHHHH..",
+        "..HHHHHHHHH..",
+        "..HHH...HHH..",
+        "..HH.....HH..",
+        "..HH.....HH..",
+        "...H.....H..."],
+    e: ["....HHHHH....",
+        "..HHhhhhhHHH.",
+        "..HHHHHHHHHH.",
+        "..HHHHHHHHHH.",
+        "..HHH...HHHH.",
+        "..HH.....HHH.",
+        "..HH.....HHH.",
+        "...H......HH."],
+    n: ["....HHHHH....",
+        "..HHhhhhhHH..",
+        "..HHHHHHHHH..",
+        "..HHHHHHHHH..",
+        "..HdHHHHHdH..",
+        "..HHHHHHHHH..",
+        "..HdHHHHHdH..",
+        "..HHHHHHHHH..",
+        "..HHHHHHHHH..",
+        "...HHHHHHH..."],
+  },
+  long: {                                   // 披肩发：只比头宽 1 格，刘海压额头，往下收窄露脸
+    s: ["....HHHHH....",
+        "...hhhhhhh...",
+        "..hHHHHHHHh..",
+        "..HHHHHHHHH..",
+        ".HHd.....dHH.",
+        ".Hh.......hH.",
+        ".HH.......HH.",
+        ".Hd.......dH.",
+        ".HH.......HH.",
+        "..H.......H..",
+        "..H.......H.."],
+    e: ["....HHHHH....",
+        "...hhhhhhh...",
+        "..hHHHHHHHh..",
+        "..HHHHHHHHHH.",
+        ".HHd.....dHHH",
+        ".Hh.......hHH",
+        ".HH.......HHH",
+        ".Hd.......dHH",
+        ".HH.......HHH",
+        "..H......HHH.",
+        "..H......HH.."],
+    n: ["....HHHHH....",
+        "...hhhhhhh...",
+        "..hHHHHHHHh..",
+        "..HHHHHHHHH..",
+        ".HHdHHHHHdHH.",
+        ".HhHHHHHHHhH.",
+        ".HHdHHHHHdHH.",
+        ".HHHHHHHHHHH.",
+        ".HHdHHHHHdHH.",
+        "..HHHHHHHHH..",
+        "..HHHHHHHHH.."],
+  },
+  bob: {                                    // 齐耳短发：比 medium 再长一截，下摆微微外扩
+    s: ["....HHHHH....",
+        "...hhhhhhh...",
+        "..hHHHHHHHh..",
+        "..HHHHHHHHH..",
+        "..HHH...HHH..",
+        "..HH.....HH..",
+        "..HH.....HH..",
+        ".HH.......HH.",
+        ".HH.......HH.",
+        ".HHH.....HHH."],
+    e: ["....HHHHH....",
+        "...hhhhhhh...",
+        "..hHHHHHHHh..",
+        "..HHHHHHHHHH.",
+        "..HHH...HHHH.",
+        "..HH.....HHH.",
+        "..HH.....HHH.",
+        ".HH.......HHH",
+        ".HH.......HHH",
+        ".HHH.....HHHH"],
+    n: ["....HHHHH....",
+        "...hhhhhhh...",
+        "..hHHHHHHHh..",
+        "..HHHHHHHHH..",
+        "..HdHHHHHdH..",
+        "..HHHHHHHHH..",
+        "..HdHHHHHdH..",
+        ".HHHHHHHHHHH.",
+        ".HHHHHHHHHHH.",
+        ".HHHHHHHHHHH."],
+  },
+  curly: {                                  // 黑卷发：轮廓故意画毛躁，顶上留一圈高光卷
+    s: ["...HH.HH.H...",
+        "..HhHHhHHhH..",
+        ".HHHHHHHHHHH.",
+        ".HhHHHhHHHhH.",
+        ".HHHHHHHHHHH.",
+        ".HH.......HH.",
+        "..H.......H.."],
+    e: ["...HH.HH.H...",
+        "..HhHHhHHhHH.",
+        ".HHHHHHHHHHH.",
+        ".HhHHHhHHHhHH",
+        ".HHHHHHHHHHHH",
+        ".HH.......HHH",
+        "..H........HH"],
+    n: ["...HH.HH.H...",
+        "..HhHHhHHhH..",
+        ".HHHHHHHHHHH.",
+        ".HhHHHhHHHhH.",
+        ".HHHHHHHHHHH.",
+        ".HHdHHHHHdHH.",
+        ".HHHHHHHHHHH.",
+        "..HHdHHHdHH..",
+        "..HHHHHHHHH.."],
+  },
+  middle: {                                 // 中分：顶上留碎发显蓬松，两侧比头再宽一格，垂到下颌
+    // 分缝只留 1 格就迅速让开额头，不然中间那条皮肤会拉成 V 字，像发际线后退
+    s: ["..HH.HHH.HH..",
+        ".HHhhhhhhhHH.",
+        ".HHHHHHHHHHH.",
+        ".HHHHH.HHHHH.",
+        ".HHH.....HHH.",
+        ".HH.......HH.",
+        ".HH.......HH.",
+        ".HH.......HH.",
+        "..H.......H.."],
+    e: ["..HH.HHH.HH..",
+        ".HHhhhhhhhHHH",
+        ".HHHHHHHHHHHH",
+        ".HHHHH.HHHHHH",
+        ".HHH.....HHHH",
+        ".HH.......HHH",
+        ".HH.......HHH",
+        ".HH.......HHH",
+        "..H.......HH."],
+    // 背面不画分缝：发色接近黑时，d 阴影会糊成一个洞
+    n: ["..HH.HHH.HH..",
+        ".HHhhhhhhhHH.",
+        ".HHHHHHHHHHH.",
+        ".HHHHHHHHHHH.",
+        ".HHHHHHHHHHH.",
+        ".HHHHHHHHHHH.",
+        ".HHHHHHHHHHH.",
+        ".HHHHHHHHHHH.",
+        "..HHHHHHHHH.."],
+  },
+  spike: {
+    s: ["..H...H...H..",
+        "..H.H.H.H.H..",
+        "..HHHHHHHHH..",
+        "..HHhhhhhHH..",
+        "..HHHHHHHHH..",
+        "..H.......H..",
+        "..H.......H.."],
+    e: ["..H...H...H..",
+        "..H.H.H.H.HH.",
+        "..HHHHHHHHHH.",
+        "..HHhhhhhHHH.",
+        "..HHHHHHHHHH.",
+        "..H.......HH.",
+        "..H........H."],
+    n: ["....HHHHH....",
+        "..HHhhhhhHH..",
+        "..HHHHHHHHH..",
+        "..HHHHHHHHH..",
+        "..HHHHHHHHH..",
+        "..HHHHHHHHH..",
+        "..HdHHHHHdH..",
+        "..HHHHHHHHH..",
+        "...HHHHHHH..."],
+  },
+};
+
+function lighten(hex, amt) {
+  const h = hex.replace("#", "");
+  const v = [0, 2, 4].map(i => Math.max(0, Math.min(255, parseInt(h.slice(i, i + 2), 16) + amt)));
+  return `rgb(${v[0]},${v[1]},${v[2]})`;
+}
+
+function drawHair(ctx, n, cx, headTop, mono) {
+  const spr = HAIR_SPR[n.hairStyle] || HAIR_SPR.short;
+  const key = n.dir === "n" ? "n" : (n.dir === "e" || n.dir === "w") ? "e" : "s";
+  const rows = spr[key], W = rows[0].length, flip = n.dir === "w";
+  const ox = (W - 1) >> 1;                 // 网格自己居中，13 宽给 9 宽的头，11 宽给 7 宽的瘦脸
+  const hi = n._hairHi || (n._hairHi = lighten(n.hair, 26));
+  for (let r = 0; r < rows.length; r++) {
+    const line = rows[r];
+    for (let c = 0; c < W; c++) {
+      const ch = line[flip ? W - 1 - c : c];
+      if (ch === ".") continue;
+      ctx.fillStyle = mono || (ch === "h" ? hi : ch === "d" ? (n._hairSh || (n._hairSh = lighten(n.hair, -38))) : n.hair);
+      ctx.fillRect(cx - ox + c, headTop - 3 + r, 1, 1);
+    }
+  }
+}
+
+
+
+
+/* 躺在沙发上睡觉 */
+function drawPersonLying(ctx, n, time) {
+  const cx = Math.round(n.px), cy = Math.round(n.py);
+  // 躺着的腿长跟着体型走：站着 legLen 8 的高个躺下来是 20，矮胖的老墨就该短一截
+  const legL = Math.round(personGeom(n).legLen * 2.5);
+  ctx.fillStyle = "rgba(0,0,0,.22)"; ctx.fillRect(cx - 17, cy + 1, 16 + legL, 3);
+  // 腿（伸向右）
+  ctx.fillStyle = "#241a12"; ctx.fillRect(cx + 1, cy - 9, legL, 10);
+  ctx.fillStyle = n.pants;   ctx.fillRect(cx + 2, cy - 8, legL - 2, 8);
+  ctx.fillStyle = "rgba(255,255,255,.10)"; ctx.fillRect(cx + 2, cy - 8, legL - 2, 1);
+  ctx.fillStyle = "rgba(0,0,0,.16)"; ctx.fillRect(cx + 2, cy - 3, legL - 2, 1);
+  ctx.fillStyle = C.dark;    ctx.fillRect(cx + legL - 2, cy - 8, 3, 8);
+  // 躯干
+  ctx.fillStyle = "#241a12"; ctx.fillRect(cx - 11, cy - 11, 14, 12);
+  ctx.fillStyle = n.shirt;   ctx.fillRect(cx - 10, cy - 10, 12, 10);
+  ctx.fillStyle = "rgba(0,0,0,.10)"; ctx.fillRect(cx - 10, cy - 3, 12, 3);
+  ctx.fillStyle = "rgba(255,255,255,.16)"; ctx.fillRect(cx - 10, cy - 10, 12, 1);
+  // 搭在肚子上的手
+  ctx.fillStyle = n.skin; ctx.fillRect(cx - 5, cy - 6, 5, 3);
+  ctx.fillStyle = "rgba(0,0,0,.14)"; ctx.fillRect(cx - 5, cy - 4, 5, 1);
+  // 头（枕在左端）
+  ctx.fillStyle = "#241a12"; ctx.fillRect(cx - 20, cy - 12, 11, 12);
+  ctx.fillStyle = n.skin;    ctx.fillRect(cx - 19, cy - 11, 9, 10);
+  ctx.fillStyle = "rgba(0,0,0,.10)"; ctx.fillRect(cx - 19, cy - 3, 9, 2);
+  // 侧躺的头发（按发型走）
+  ctx.fillStyle = n.hair;
+  ctx.fillRect(cx - 19, cy - 12, 9, 4);
+  if (n.hairStyle === "spike") {                       // 前刺朝左炸开
+    for (const [oy, L] of [[-11, 5], [-8, 6], [-5, 4]]) ctx.fillRect(cx - 19 - L, cy + oy, L, 2);
+  } else if (n.hairStyle === "long") {                 // 长发铺在身后
+    ctx.fillRect(cx - 22, cy - 12, 3, 12);
+    ctx.fillRect(cx - 19, cy - 4, 8, 3);
+  } else {                                             // 中长发：贴头一圈
+    ctx.fillRect(cx - 21, cy - 11, 2, 8);
+    ctx.fillRect(cx - 19, cy - 5, 5, 2);
+  }
+  ctx.fillStyle = "rgba(255,255,255,.12)"; ctx.fillRect(cx - 19, cy - 12, 9, 1);
+  // 闭着的眼 + 嘴
+  ctx.fillStyle = "#2a2118"; ctx.fillRect(cx - 16, cy - 6, 3, 1);
+  ctx.fillStyle = "rgba(214,120,110,.45)"; ctx.fillRect(cx - 15, cy - 3, 2, 1);
+  // Zzz
+  for (let i = 0; i < 3; i++) {
+    const t2 = (time * .42 + i * .34) % 1;
+    pxText(ctx, "Z", Math.round(cx - 14 + t2 * 9), Math.round(cy - 17 - t2 * 13),
+           `rgba(255,255,255,${(1 - t2) * .7})`);
+  }
+  if (n.emote && n.emoteT > 0) drawEmote(ctx, cx + 4, cy - 30, n.emote, time);
+}
+
+// 尖脸每一行左右各收进几格：眼睛所在的第 4 行还是满宽，之后一路收到下巴
+const FACE_TAPER = [0, 0, 0, 0, 0, 1, 2, 3];
+
+function personGeom(n) {
+  const build = n.build || "normal";
+  return {
+    build,
+    // 头都是 9 宽。瘦脸不靠整体缩小，靠 faceTaper 收下半张脸（见 bodyPass）
+    // tallThin 和 tall 的 legLen + torsoH 相同 —— 雪兔要和店长一样高，只是瘦一圈
+    headHW: 4,
+    torsoHW: build === "tall" ? 6 : build === "tallSlim" ? 5 : build === "stout" ? 6
+           : build === "chubby" ? 5 : build === "tallThin" ? 3 : build === "tallLean" ? 4 : 4,
+    legLen:  build === "tall" ? 8 : build === "tallSlim" ? 7 : build === "stout" ? 4
+           : build === "chubby" ? 4 : build === "tallThin" ? 8 : build === "tallLean" ? 7 : 5,
+    torsoH:  build === "tall" ? 10 : build === "tallSlim" ? 8 : build === "stout" ? 7
+           : build === "chubby" ? 7 : build === "tallThin" ? 10 : build === "tallLean" ? 8 : 7,
+    legW:    build === "stout" || build === "chubby" ? 3 : 2,
+  };
+}
+
+/* 画一遍身体。mono 非空时整体涂成同一色 —— 用来做贴合轮廓的描边。 */
+function bodyPass(ctx, n, g, cx, base, time, mono) {
+  const moving = n.path && n.path.length > 0;
+  const walk = moving ? Math.floor(time * 7 + n.seed) % 4 : 0;
+  const { torsoHW: hw, headHW: hhw, legLen, torsoH, legW, build } = g;
+  const bodyBase = n.sitting ? base - 2 : base - legLen;
+  const hy = bodyBase - torsoH - 7;               // 头顶
+  const legL = build === "stout" ? cx - 4 : cx - 3;
+  const F = c => { ctx.fillStyle = mono || c; };
+
+  if (!n.sitting) {                              // 腿
+    const la = walk === 1 ? -1 : walk === 3 ? 1 : 0;
+    F(n.skirt ? n.skin : n.pants);
+    ctx.fillRect(legL, base - legLen + Math.max(0, la), legW, legLen - Math.abs(la));
+    ctx.fillRect(cx + 1, base - legLen + Math.max(0, -la), legW, legLen - Math.abs(la));
+    F(C.dark);
+    ctx.fillRect(legL, base - 1, legW, 1); ctx.fillRect(cx + 1, base - 1, legW, 1);
+  }
+
+  F(n.shirt);                                    // 躯干
+  ctx.fillRect(cx - hw, bodyBase - torsoH, hw * 2 + 1, torsoH);
+  if (build === "stout") {                       // 溜肩：把两个上角削掉
+    ctx.fillRect(cx - hw, bodyBase - torsoH, 2, 1);
+    ctx.fillRect(cx + hw - 1, bodyBase - torsoH, 2, 1);
+  }
+  if (!mono) {
+    if (build === "stout") {
+      ctx.fillStyle = "rgba(255,255,255,.07)";
+      ctx.fillRect(cx - hw + 2, bodyBase - 5, hw * 2 - 3, 4);
+    } else if (build === "tallSlim") {           // 收腰
+      ctx.fillStyle = "rgba(0,0,0,.16)";
+      ctx.fillRect(cx - hw, bodyBase - 3, 1, 3); ctx.fillRect(cx + hw, bodyBase - 3, 1, 3);
+    }
+    ctx.fillStyle = "rgba(0,0,0,.16)"; ctx.fillRect(cx + hw - 1, bodyBase - torsoH, 2, torsoH);
+    ctx.fillStyle = "rgba(255,255,255,.13)"; ctx.fillRect(cx - hw, bodyBase - torsoH, 1, torsoH);
+    if (n.collar) {                              // 衬衫领口 + 门襟
+      ctx.fillStyle = "rgba(0,0,0,.22)";
+      ctx.fillRect(cx - 2, bodyBase - torsoH, 1, 3); ctx.fillRect(cx + 1, bodyBase - torsoH, 1, 3);
+      ctx.fillStyle = "rgba(0,0,0,.14)";
+      for (let i = 3; i < torsoH - 1; i += 3) ctx.fillRect(cx, bodyBase - torsoH + i, 1, 1);
+    }
+    if (n.apron) {                             // 围裙：只盖下半身，留出上衣
+      ctx.fillStyle = "#e6ddc8"; ctx.fillRect(cx - hw + 2, bodyBase - 4, hw * 2 - 3, 4);
+      ctx.fillStyle = "#cdc2a8"; ctx.fillRect(cx - hw + 2, bodyBase - 4, hw * 2 - 3, 1);
+      ctx.fillStyle = "#e6ddc8";                 // 背带
+      ctx.fillRect(cx - 2, bodyBase - torsoH + 1, 1, torsoH - 5);
+      ctx.fillRect(cx + 2, bodyBase - torsoH + 1, 1, torsoH - 5);
+    }
+  }
+  if (n.bag) {                                   // 斜挎带 + 包
+    F("#4a3728");
+    for (let i = 0; i < torsoH; i++)
+      ctx.fillRect(cx - hw + Math.round(i * (hw * 2 - 1) / torsoH), bodyBase - torsoH + i, 2, 1);
+    const bx = n.dir === "w" ? cx - hw - 4 : cx + hw - 1;
+    F("#5c4630"); ctx.fillRect(bx, bodyBase - 5, 5, 6);
+    if (!mono) { ctx.fillStyle = "#725640"; ctx.fillRect(bx, bodyBase - 5, 5, 2); }
+  }
+
+  if (n.skirt) {                                 // A 字裙：三段递宽，压在上衣下摆之上
+    F(n.skirt);
+    ctx.fillRect(cx - hw, bodyBase - 4, hw * 2 + 1, 2);
+    ctx.fillRect(cx - hw - 1, bodyBase - 2, hw * 2 + 3, 2);
+    ctx.fillRect(cx - hw - 2, bodyBase, hw * 2 + 5, 1);
+    if (!mono) {
+      ctx.fillStyle = "rgba(255,255,255,.18)"; ctx.fillRect(cx - hw, bodyBase - 4, hw * 2 + 1, 1);
+      ctx.fillStyle = "rgba(0,0,0,.14)";
+      ctx.fillRect(cx + hw - 1, bodyBase - 4, 2, 2); ctx.fillRect(cx + hw, bodyBase - 2, 2, 2);
+      ctx.fillStyle = "rgba(0,0,0,.10)";           // 褶
+      ctx.fillRect(cx - 2, bodyBase - 3, 1, 4); ctx.fillRect(cx + 2, bodyBase - 3, 1, 4);
+    }
+  }
+
+  if (n.spider && !mono) {                       // 蜘蛛侠战衣：胸口一只蜘蛛 + 蛛网格
+    ctx.fillStyle = "rgba(0,0,0,.30)";
+    for (let i = 1; i < torsoH - 1; i += 3) ctx.fillRect(cx - hw + 1, bodyBase - torsoH + i, hw * 2 - 1, 1);
+    for (let i = -hw + 2; i <= hw - 1; i += 3) ctx.fillRect(cx + i, bodyBase - torsoH + 1, 1, torsoH - 2);
+    ctx.fillStyle = "#141018";                   // 胸标
+    ctx.fillRect(cx - 1, bodyBase - torsoH + 3, 3, 2);
+    ctx.fillRect(cx - 2, bodyBase - torsoH + 2, 1, 1); ctx.fillRect(cx + 2, bodyBase - torsoH + 2, 1, 1);
+    ctx.fillRect(cx - 2, bodyBase - torsoH + 5, 1, 1); ctx.fillRect(cx + 2, bodyBase - torsoH + 5, 1, 1);
+  }
+
+  // 战衣是长袖：胳膊跟着上衣走，只在手腕露出一截皮肤
+  F(n.spider ? n.shirt : n.skin);                // 手臂
+  const swing = moving ? (walk === 1 ? 1 : walk === 3 ? -1 : 0) : 0;
+  ctx.fillRect(cx - hw - 1, bodyBase - torsoH + 2 + swing, 1, 4);
+  ctx.fillRect(cx + hw + 1, bodyBase - torsoH + 2 - swing, 1, 4);
+  if (n.spider) {
+    F(n.skin);
+    ctx.fillRect(cx - hw - 1, bodyBase - torsoH + 6 + swing, 1, 1);
+    ctx.fillRect(cx + hw + 1, bodyBase - torsoH + 6 - swing, 1, 1);
+  }
+
+  F(n.skin);                                     // 头
+  if (n.faceTaper) {
+    // 尖脸：颧骨以上保持满宽，往下每行收一格，收出一个下巴尖
+    for (let r = 0; r < 8; r++) {
+      const t = FACE_TAPER[r];
+      ctx.fillRect(cx - hhw + t, hy + r, (hhw - t) * 2 + 1, 1);
+    }
+    if (!mono) {
+      ctx.fillStyle = "rgba(0,0,0,.10)";
+      for (let r = 0; r < 8; r++) {
+        const t = FACE_TAPER[r];
+        ctx.fillRect(cx + hhw - t - 1, hy + r, t ? 1 : 2, 1);
+      }
+    }
+  } else {
+    ctx.fillRect(cx - hhw, hy, hhw * 2 + 1, 8);
+    if (!mono) { ctx.fillStyle = "rgba(0,0,0,.10)"; ctx.fillRect(cx + hhw - 1, hy, 2, 8); }
+  }
+
+  drawHair(ctx, n, cx, hy, mono);
+  if (n.hat && n.cap) drawCap(ctx, n, cx, hy, hhw, mono);
+  else if (n.hat) { F(n.hatColor); ctx.fillRect(cx - hhw - 1, hy - 2, hhw * 2 + 3, 2); ctx.fillRect(cx - 3, hy - 6, 7, 4); }
+
+  if (!mono) {                                   // 五官只在正式那遍画
+    const blink = ((time * 1000 + n.seed * 977) % 4200) < 130;
+    // smallEyes：本来就只有 1px 高，眨眼时干脆闭成一条缝
+    const eh = n.smallEyes ? 1 : blink ? 1 : 2, ey = hy + 4 + (blink ? 1 : 0);
+    if (n.eyeShadow && n.dir !== "n") {         // 青绿眼影
+      ctx.fillStyle = n.eyeShadow;
+      if (n.dir !== "e") ctx.fillRect(cx - 3, ey - 1, 2, 2);
+      if (n.dir !== "w") ctx.fillRect(cx + 2, ey - 1, 2, 2);
+    }
+    ctx.fillStyle = "#2a2118";
+    if (n.dir === "s") { ctx.fillRect(cx - 2, ey, 1, eh); ctx.fillRect(cx + 2, ey, 1, eh); }
+    else if (n.dir === "e") { ctx.fillRect(cx + 2, ey, 1, eh); }
+    else if (n.dir === "w") { ctx.fillRect(cx - 2, ey, 1, eh); }
+    if (n.lashes && !blink && n.dir !== "n") {
+      ctx.fillStyle = "#2a2118";
+      if (n.dir !== "e") ctx.fillRect(cx - 3, ey - 1, 1, 1);
+      if (n.dir !== "w") ctx.fillRect(cx + 3, ey - 1, 1, 1);
+      ctx.fillStyle = "rgba(178,88,104,.45)"; ctx.fillRect(cx - 1, hy + 7, 2, 1);
+    }
+    if (n.dir !== "n") {
+      // 尖脸在这一行已经收窄了，腮红跟着收，别飘到脸外面去
+      ctx.fillStyle = "rgba(214,120,110,.45)";
+      const bw = n.faceTaper ? 1 : 2, bx = n.faceTaper ? 2 : 3;
+      ctx.fillRect(cx - bx, hy + 6, bw, 1); ctx.fillRect(cx + bx - bw + 1, hy + 6, bw, 1);
+    }
+    // 传没被眨眼位移过的基准行：镜架是架在鼻梁上的，不该跟着眼皮上下跳
+    if (n.glasses && n.dir !== "n") drawGlasses(ctx, n, cx, hy + 4);
+  }
+
+  if (n.laptop) drawLaptop(ctx, n, cx, bodyBase, torsoH, hw, time, mono);
+}
+
+/* 黑framed眼镜：正面两个方框 + 鼻梁，侧面只画朝向那一侧的一片镜片 */
+function drawGlasses(ctx, n, cx, ey) {
+  const col = n.glassColor || "#1d1a1f";
+  ctx.fillStyle = col;
+  if (n.glassThin) {
+    // 细框：金属色而不是黑色 —— 眼珠本来就是深色，深色镜架画在同一行会连成一条黑带。
+    // 浅一档的钢色夹在眼睛两侧，才看得出是两片镜片加一根鼻梁。
+    if (n.dir === "s") {
+      for (const dx of [-3, -1, 0, 1, 3]) ctx.fillRect(cx + dx, ey, 1, 1);
+    } else {
+      const s = n.dir === "e" ? 1 : -1;
+      for (const dx of [1, 3]) ctx.fillRect(cx + s * dx, ey, 1, 1);
+      ctx.fillRect(cx + s * 4, ey - 1, 1, 1);        // 镜腿往耳朵方向翘一格
+    }
+    return;
+  }
+  if (n.dir === "s") {
+    for (const lx of [cx - 4, cx + 1]) {
+      ctx.fillRect(lx, ey - 2, 4, 1); ctx.fillRect(lx, ey + 2, 4, 1);
+      ctx.fillRect(lx, ey - 1, 1, 3); ctx.fillRect(lx + 3, ey - 1, 1, 3);
+    }
+    ctx.fillRect(cx, ey - 1, 1, 1);                // 鼻梁
+    ctx.fillStyle = "rgba(226,244,255,.30)";       // 镜片反光
+    ctx.fillRect(cx - 3, ey - 1, 1, 1); ctx.fillRect(cx + 2, ey - 1, 1, 1);
+  } else {
+    const s = n.dir === "e" ? 1 : -1, lx = n.dir === "e" ? cx + 1 : cx - 4;
+    ctx.fillRect(lx, ey - 2, 4, 1); ctx.fillRect(lx, ey + 2, 4, 1);
+    ctx.fillRect(lx, ey - 1, 1, 3); ctx.fillRect(lx + 3, ey - 1, 1, 3);
+    ctx.fillRect(cx + s * 5, ey - 1, 1, 1);        // 镜腿
+    ctx.fillStyle = "rgba(226,244,255,.30)";
+    ctx.fillRect(lx + 1, ey - 1, 1, 1);
+  }
+}
+
+function drawPerson(ctx, n, time) {
+  if (n.lying) return drawPersonLying(ctx, n, time);
+  const g = personGeom(n);
+  const cx = Math.round(n.px), py = Math.round(n.py);
+  const base = py + (n.sitting ? 3 : 0);
+
+  ctx.fillStyle = "rgba(0,0,0,.24)";             // 影子
+  ctx.fillRect(cx - g.torsoHW, py - 1, g.torsoHW * 2 + 1, 3);
+  ctx.fillRect(cx - g.torsoHW - 1, py, g.torsoHW * 2 + 3, 1);
+
+  // 贴合轮廓的 1px 描边：整个身体用深色画四遍，各偏一格
+  for (const [ox, oy] of [[-1, 0], [1, 0], [0, -1], [0, 1]])
+    bodyPass(ctx, n, g, cx + ox, base + oy, time, "#241a12");
+  bodyPass(ctx, n, g, cx, base, time, null);
+
+  if (n.emote && n.emoteT > 0)
+    drawEmote(ctx, cx, base - g.legLen - g.torsoH - 22, n.emote, time);
+}
+
+function drawEmote(ctx, cx, y, kind, time) {
+  const w = 14, h = 12, x = cx - 7;
+  ctx.fillStyle = "rgba(0,0,0,.25)"; ctx.fillRect(x + 1, y + 1, w, h);
+  ctx.fillStyle = "#f6f1e4"; ctx.fillRect(x, y, w, h);
+  ctx.fillRect(cx - 2, y + h, 3, 2); ctx.fillRect(cx - 1, y + h + 2, 2, 1);
+  ctx.fillStyle = "#cfc4a8"; ctx.fillRect(x, y, w, 1); ctx.fillRect(x, y + h - 1, w, 1);
+  const ix = x + 4, iy = y + 3;
+  switch (kind) {
+    case "dice":
+      ctx.fillStyle = "#3a3025"; ctx.fillRect(ix, iy, 7, 7);
+      ctx.fillStyle = "#f6f1e4";
+      { const p = Math.floor(time * 6) % 3;
+        ctx.fillRect(ix + 3, iy + 3, 1, 1);
+        if (p > 0) { ctx.fillRect(ix + 1, iy + 1, 1, 1); ctx.fillRect(ix + 5, iy + 5, 1, 1); }
+        if (p > 1) { ctx.fillRect(ix + 5, iy + 1, 1, 1); ctx.fillRect(ix + 1, iy + 5, 1, 1); } }
+      break;
+    case "heart":
+      ctx.fillStyle = "#d8556a";
+      ctx.fillRect(ix + 1, iy + 1, 2, 2); ctx.fillRect(ix + 4, iy + 1, 2, 2);
+      ctx.fillRect(ix, iy + 2, 7, 2); ctx.fillRect(ix + 1, iy + 4, 5, 1);
+      ctx.fillRect(ix + 2, iy + 5, 3, 1); ctx.fillRect(ix + 3, iy + 6, 1, 1);
+      break;
+    case "meeple":
+      ctx.fillStyle = "#3c7fb1";
+      ctx.fillRect(ix + 2, iy, 3, 2); ctx.fillRect(ix + 1, iy + 2, 5, 2);
+      ctx.fillRect(ix, iy + 3, 7, 1); ctx.fillRect(ix + 1, iy + 4, 2, 3); ctx.fillRect(ix + 4, iy + 4, 2, 3);
+      break;
+    case "coffee":
+      ctx.fillStyle = "#e8e2d2"; ctx.fillRect(ix, iy + 2, 6, 5);
+      ctx.fillStyle = "#6b4226"; ctx.fillRect(ix + 1, iy + 3, 4, 2);
+      ctx.fillStyle = "#e8e2d2"; ctx.fillRect(ix + 6, iy + 3, 1, 2);
+      ctx.fillStyle = "rgba(120,110,100,.6)"; ctx.fillRect(ix + 2, iy, 1, 2); ctx.fillRect(ix + 4, iy, 1, 1);
+      break;
+    case "cookie":
+      ctx.fillStyle = "#c9964e"; ctx.fillRect(ix + 1, iy + 1, 5, 6); ctx.fillRect(ix, iy + 2, 7, 4);
+      ctx.fillStyle = "#6b4226";
+      ctx.fillRect(ix + 2, iy + 3, 1, 1); ctx.fillRect(ix + 4, iy + 5, 1, 1); ctx.fillRect(ix + 3, iy + 2, 1, 1);
+      break;
+    case "tv":
+      ctx.fillStyle = "#3a3025"; ctx.fillRect(ix, iy + 1, 7, 6);
+      ctx.fillStyle = Math.sin(time * 8) > 0 ? "#8fc6e0" : "#5f9ab5"; ctx.fillRect(ix + 1, iy + 2, 5, 4);
+      break;
+    case "think": pxText(ctx, "?", ix + 2, iy + 1, "#3a3025"); break;
+    case "bang":  pxText(ctx, "!", ix + 2, iy + 1, "#c94f3d"); break;
+    case "note":
+      ctx.fillStyle = "#4e9d5c"; ctx.fillRect(ix + 4, iy, 2, 6); ctx.fillRect(ix + 1, iy + 4, 4, 3);
+      break;
+  }
+}
+
+/* ══ 猫 ═══════════════════════════════════════════════ */
+const cat = { px: 24 * TW, py: 18 * TW, path: null, nap: 6, dir: "s", tail: 0 };
+function updateCat(dt) {
+  if (cat.nap > 0) { cat.nap -= dt; cat.tail += dt; return; }
+  if (!cat.path || !cat.path.length) {
+    let g, tries = 0;
+    do { g = { x: ri(2, GW - 3), y: ri(3, GH - 2) }; tries++; } while (!walkable(g.x, g.y) && tries < 60);
+    cat.path = findPath(Math.round((cat.px - TW / 2) / TW), Math.round((cat.py - TW + 2) / TW), g.x, g.y) || [];
+    if (!cat.path.length) { cat.nap = ri(5, 14); return; }
+  }
+  const nd = cat.path[0];
+  const tx = nd.x * TW + TW / 2, ty = nd.y * TW + TW - 2;
+  const dx = tx - cat.px, dy = ty - cat.py, d = Math.hypot(dx, dy);
+  const sp = 22 * dt;
+  cat.dir = Math.abs(dx) > Math.abs(dy) ? (dx > 0 ? "e" : "w") : (dy > 0 ? "s" : "n");
+  if (d <= sp) { cat.px = tx; cat.py = ty; cat.path.shift(); if (!cat.path.length) cat.nap = ri(6, 16); }
+  else { cat.px += dx / d * sp; cat.py += dy / d * sp; }
+  cat.tail += dt;
+}
+function drawCat(ctx, time) {
+  const x = Math.round(cat.px), y = Math.round(cat.py);
+  const napping = cat.nap > 0;
+  const body = "#d8a05a", dk = "#a8763c";
+  ctx.fillStyle = "rgba(0,0,0,.20)"; ctx.fillRect(x - 5, y - 1, 11, 2);
+  if (napping) {
+    ctx.fillStyle = body; ctx.fillRect(x - 5, y - 5, 11, 5); ctx.fillRect(x - 4, y - 7, 6, 3);
+    ctx.fillStyle = dk;   ctx.fillRect(x - 5, y - 5, 11, 1);
+    ctx.fillStyle = body; ctx.fillRect(x - 4, y - 9, 2, 2); ctx.fillRect(x, y - 9, 2, 2);
+    ctx.fillStyle = "#3a2a18"; ctx.fillRect(x - 3, y - 6, 2, 1); ctx.fillRect(x, y - 6, 2, 1);
+    const t2 = (time * .5) % 1;
+    pxText(ctx, "-", x + 6, y - 12 - t2 * 5, `rgba(255,255,255,${(1 - t2) * .5})`);
+  } else {
+    ctx.fillStyle = body; ctx.fillRect(x - 5, y - 7, 9, 6);
+    ctx.fillStyle = dk;
+    ctx.fillRect(x - 4, y - 1, 2, 1); ctx.fillRect(x + 1, y - 1, 2, 1);
+    const tw = Math.round(Math.sin(cat.tail * 6) * 2);
+    ctx.fillRect(x + (cat.dir === "w" ? 4 : -6), y - 9 + tw, 2, 4);
+    const hx = cat.dir === "w" ? x - 8 : x + 3;
+    ctx.fillStyle = body; ctx.fillRect(hx, y - 10, 5, 5);
+    ctx.fillRect(hx, y - 13, 2, 3); ctx.fillRect(hx + 3, y - 13, 2, 3);
+    ctx.fillStyle = "#3a2a18";
+    ctx.fillRect(hx + 1, y - 8, 1, 1); ctx.fillRect(hx + 3, y - 8, 1, 1);
+  }
+}
+
+/* ══ NPC ══════════════════════════════════════════════ */
+const people = [];
+
+/* ── 固定角色表 ───────────────────────────────────────
+   往这里加条目就能定制新角色：外观 + role 决定行为。      */
+const CAST = {
+  owner: {                          // 店长：高大、白衬衫牛仔裤、前刺头、爱躺沙发
+    name: "店长", role: "owner", build: "tall", resident: true,
+    skin: "#e8bd90", hair: "#241c16", hairStyle: "spike",
+    shirt: "#f2efe6", pants: "#44618a", collar: true,
+  },
+  haley: {                          // 海莉：金色披肩发、青绿眼影、蓝上衣粉裙、不戴帽
+    name: "海莉", role: "regular", build: "tallSlim", resident: true,
+    skin: "#fbd7ae", hair: "#6f4a2c", hairStyle: "long", lashes: true,
+    eyeShadow: "#2f9aa0",
+    shirt: "#4f7fc9", pants: "#fbd7ae", skirt: "#e79ab8",
+  },
+  mo: {                             // 老墨：矮胖、一身黑、斜挎包、中长发、爱躺沙发
+    name: "老墨", role: "napper", build: "stout", resident: true,
+    skin: "#e0aa79", hair: "#4a3a2c", hairStyle: "medium",
+    shirt: "#3a3844", pants: "#2c2a33", bag: true,
+  },
+  coder: {                          // 程序员：不戴眼镜、电脑不离手
+    name: "程序员", role: "coder", resident: true,
+    skin: "#e8c49c", hair: "#3a2c22", style: 3,
+    shirt: "#41565e", pants: "#33323a", laptop: true,
+  },
+  bear: {                           // 小熊：矮胖但没老墨胖、黑框眼镜、小眼睛、黑卷发、深蓝店员服
+    name: "小熊", role: "clerk", build: "chubby", resident: true,
+    skin: "#e6b88c", hair: "#211c1a", hairStyle: "curly",
+    glasses: true, smallEyes: true,
+    shirt: "#22417a", pants: "#2b3350", collar: true, postDX: 0,
+  },
+  rabbit: {                         // 雪兔：和店长一样高但极瘦、短发、店员
+    name: "雪兔", role: "clerk", build: "tallThin", resident: true,
+    skin: "#f7dcc0", hair: "#5c4636", hairStyle: "bob", lashes: true,
+    shirt: "#7fb2c4", pants: "#3d4a63", postDX: -1,
+  },
+  lanwen: {                         // lanwen：蜘蛛侠战衣但不戴面具、瘦、中分
+    name: "lanwen", role: "regular", build: "tallLean", resident: true,
+    skin: "#e8bd90", hair: "#2b2320", hairStyle: "middle",
+    faceTaper: true, glasses: true, glassThin: true, glassColor: "#9a90a6",
+    spider: true, shirt: "#c0302c", pants: "#22409a",
+  },
+};
+
+function makePerson(castKey) {
+  const c = castKey ? CAST[castKey] : null;
+  return {
+    castKey: castKey || null,
+    name: c ? c.name : rnd(NAMES),
+    role: c ? c.role : "guest",
+    staff: !!(c && c.resident),     // 常驻角色：不计入客流上限、不会被清掉
+    build: c && c.build ? c.build : "normal",
+    collar: !!(c && c.collar),
+    apron: !!(c && c.apron),
+    bag: !!(c && c.bag),
+    laptop: !!(c && c.laptop),
+    cap: !!(c && c.cap),
+    hairStyle: c ? c.hairStyle || null : null,
+    skin: c ? c.skin : rnd(SKIN),
+    hair: c ? c.hair : rnd(HAIR),
+    shirt: c ? c.shirt : rnd(SHIRT),
+    pants: c ? c.pants : rnd(PANTS),
+    style: c && c.style !== undefined ? c.style : ri(0, 3),
+    lashes: !!(c && c.lashes),
+    glasses: !!(c && c.glasses),
+    glassColor: c ? c.glassColor || null : null,
+    glassThin: !!(c && c.glassThin),
+    smallEyes: !!(c && c.smallEyes),
+    faceTaper: !!(c && c.faceTaper),
+    spider: !!(c && c.spider),
+    postDX: c && c.postDX !== undefined ? c.postDX : 0,
+    eyeShadow: c ? c.eyeShadow || null : null,
+    skirt: c ? c.skirt || null : null,
+    // 海莉这类「有时戴帽子」的，每次换班重新掷一次
+    hat: c ? (c.cap ? Math.random() < .5 : false) : Math.random() < .18,
+    hatColor: c && c.capColor ? c.capColor : rnd(SHIRT),
+    seed: Math.random() * 10,
+    px: SPAWN.x * TW + TW / 2, py: SPAWN.y * TW + TW - 2,
+    dir: "w", path: [], state: "enter", timer: ri(1, 3) / 2,
+    emote: null, emoteT: 0,
+    chair: null, seat: null, sitting: false, lying: false,
+    browseAt: null, pickedGame: null,
+    napSofa: null, napSeats: [],
+    lounged: false, leaving: false, dead: false,
+  };
+}
+const emote = (n, kind, dur = 2.6) => { n.emote = kind; n.emoteT = dur; };
+const tileOf = n => ({ x: Math.round((n.px - TW / 2) / TW), y: Math.round((n.py - TW + 2) / TW) });
+function goTo(n, tx, ty) {
+  const t = tileOf(n);
+  const p = findPath(t.x, t.y, tx, ty);
+  n.path = p || [];
+  // 起步这一帧就转正，否则上一个姿势的侧身朝向会在画面上留一帧
+  if (n.path.length) {
+    const nd = n.path[0];
+    n.dir = Math.abs(nd.x - t.x) >= Math.abs(nd.y - t.y) ? "s" : (nd.y > t.y ? "s" : "n");
+  }
+  return !!p;
+}
+const NUDGE = { n: [0, -4], s: [0, 4], e: [4, 0], w: [-4, 0] };
+function snapSeat(n, cell, dir) {
+  const [dx, dy] = NUDGE[dir];
+  n.px = cell.x * TW + TW / 2 + dx;
+  n.py = cell.y * TW + TW - 2 + dy;
+  n.dir = dir;
+  n.sitting = true;
+}
+// 沙发是实心的：从坐者正面那一排里挑一个离目标座位最近的落脚点
+const FRONT = { n: [0, -1], s: [0, 1], e: [1, 0], w: [-1, 0] };
+function sofaApproach(seat) {
+  const f = FRONT[seat.dir];
+  const cands = seat.sofa.seats
+    .map(s => ({ x: s.x + f[0], y: s.y + f[1] }))
+    .filter(a => walkable(a.x, a.y));
+  if (!cands.length) return null;
+  const dist = a => Math.abs(a.x - seat.x) + Math.abs(a.y - seat.y);
+  return cands.reduce((best, a) => dist(a) < dist(best) ? a : best);
+}
+function pickShelfSpot() {
+  const pool = [];
+  for (const s of shelves) for (let i = 0; i < s.w; i++) {
+    if (walkable(s.x + i, s.y + 1)) pool.push({ x: s.x + i, y: s.y + 1, dir: "n" });
+    if (walkable(s.x + i, s.y - 1)) pool.push({ x: s.x + i, y: s.y - 1, dir: "s" });
+  }
+  for (const s of wallShelves) for (let i = 0; i < s.h; i++) {
+    const ax = s.dir === "w" ? s.x + 1 : s.x - 1;
+    if (walkable(ax, s.y + i)) pool.push({ x: ax, y: s.y + i, dir: s.dir === "w" ? "w" : "e" });
+  }
+  for (const w of IWALL_V) for (let i = 0; i < w.h; i++) {
+    if (walkable(w.x + 1, w.y + i)) pool.push({ x: w.x + 1, y: w.y + i, dir: "w" });
+    if (walkable(w.x - 1, w.y + i)) pool.push({ x: w.x - 1, y: w.y + i, dir: "e" });
+  }
+  for (const w of IWALL_H) for (let i = 0; i < w.w; i++)
+    if (walkable(w.x + i, w.y + 1)) pool.push({ x: w.x + i, y: w.y + 1, dir: "n" });
+  return pool.length ? rnd(pool) : null;
+}
+function pickChair() {
+  const cands = [];
+  for (const t of TABLES) {
+    const free = t.chairs.filter(c => !c.by);
+    if (!free.length) continue;
+    const seated = t.chairs.length - free.length;
+    const weight = seated === 0 ? 1 : seated < 4 ? 5 : 2;
+    for (let i = 0; i < weight; i++) cands.push(rnd(free));
+  }
+  return cands.length ? rnd(cands) : null;
+}
+function pickSeat() {
+  const free = SOFAS.flatMap(s => s.seats).filter(s => !s.by);
+  return free.length ? rnd(free) : null;
+}
+
+function update(n, dt, time) {
+  if (n.emoteT > 0) n.emoteT -= dt; else n.emote = null;
+
+  if (n.path && n.path.length) {
+    const nd = n.path[0];
+    const tx = nd.x * TW + TW / 2, ty = nd.y * TW + TW - 2;
+    const dx = tx - n.px, dy = ty - n.py, d = Math.hypot(dx, dy);
+    const sp = (n.staff ? 34 : 27) * dt;
+    const horiz = Math.abs(dx) > Math.abs(dy);
+    // 全店统一：左右移动一律平移，保持正面，不转侧身。
+    // 站定后的朝向（看货架、面对座位、站柜台）不受影响，那边照样有侧身。
+    n.dir = horiz ? "s" : (dy > 0 ? "s" : "n");
+    if (d <= sp) { n.px = tx; n.py = ty; n.path.shift(); }
+    else { n.px += dx / d * sp; n.py += dy / d * sp; }
+    return;
+  }
+  n.timer -= dt;
+  switch (n.role) {
+    case "owner":  return updateOwner(n, dt);
+    case "napper": return updateNapper(n, dt);
+    case "coder":  return updateCoder(n, dt);
+    case "clerk":  return updateStaff(n, dt);
+  }
+
+  switch (n.state) {
+    case "enter":
+      if (n.timer <= 0) {
+        const spot = pickShelfSpot();
+        n.browseAt = spot;
+        if (spot && goTo(n, spot.x, spot.y)) { n.state = "browse"; n.timer = ri(7, 15); }
+        else { n.state = "seek"; n.timer = 0; }
+      }
+      break;
+
+    case "browse":
+      if (n.browseAt) n.dir = n.browseAt.dir;
+      if (n.emoteT <= 0 && Math.random() < dt * .7) emote(n, rnd(["think", "meeple", "heart", "note"]));
+      if (n.timer <= 0) {
+        n.pickedGame = rnd(GAMES);
+        n.state = (!n.lounged && Math.random() < .35) ? "toSofa" : "seek";
+        n.timer = 0;
+      }
+      break;
+
+    case "toSofa": {
+      const seat = pickSeat();
+      if (!seat) { n.state = "seek"; n.timer = 0; break; }
+      const app = sofaApproach(seat);
+      if (app && goTo(n, app.x, app.y)) { seat.by = n; n.seat = seat; n.state = "sitSofa"; }
+      else { n.state = "seek"; n.timer = 0; }
+      break;
+    }
+    case "sitSofa":
+      if (!n.seat) { n.state = "seek"; n.timer = 0; break; }
+      snapSeat(n, n.seat, n.seat.dir);
+      n.state = "lounge"; n.timer = ri(14, 30);
+      break;
+
+    case "lounge":
+      if (!n.seat) { n.sitting = false; n.state = "seek"; n.timer = 0; break; }
+      if (n.emoteT <= 0 && Math.random() < dt * .5) emote(n, rnd(["tv", "coffee", "heart", "note"]));
+      if (n.timer <= 0) {
+        n.seat.by = null; n.seat = null; n.sitting = false; n.lounged = true;
+        n.state = "seek"; n.timer = 0;
+      }
+      break;
+
+    case "seek": {
+      const ch = pickChair();
+      if (!ch) {
+        if (!n.lounged) { n.state = "toSofa"; break; }
+        n.state = "toCounter"; n.timer = 0; break;
+      }
+      if (goTo(n, ch.x, ch.y)) { ch.by = n; n.chair = ch; n.state = "sitTable"; }
+      else n.timer = 1.5;
+      break;
+    }
+    case "sitTable": {
+      const ch = n.chair;
+      if (!ch) { n.state = "seek"; n.timer = 0; break; }
+      snapSeat(n, ch, ch.dir);
+      if (!ch.t.game) ch.t.game = n.pickedGame || rnd(GAMES);
+      n.state = "play"; n.timer = ri(38, 80);
+      break;
+    }
+    case "play": {
+      if (!n.chair) { n.sitting = false; n.state = "seek"; n.timer = 0; break; }
+      const t = n.chair.t;
+      if (n.emoteT <= 0 && Math.random() < dt * .55) {
+        const seated = t.chairs.filter(c => c.by).length;
+        if (seated >= 2) { emote(n, rnd(["dice", "bang", "heart", "meeple", "note", "think"]));
+          if (Math.random() < .35) t.rollT = 1.2; }
+        else emote(n, rnd(["think", "coffee"]));
+      }
+      if (n.timer <= 0) {
+        const t2 = n.chair.t;
+        n.chair.by = null; n.chair = null; n.sitting = false;
+        if (t2.chairs.every(c => !c.by)) t2.game = null;
+        // 免费小店：不结账。一半人顺路去服务台还游戏 / 续杯，其余直接走
+        n.state = Math.random() < .55 ? "toCounter" : "leave";
+        n.timer = 0;
+      }
+      break;
+    }
+    case "toCounter": {
+      const spot = COUNTER_SPOTS.find(q => !people.some(p => p.counterSpot === q)) || rnd(COUNTER_SPOTS);
+      n.counterSpot = spot;
+      if (goTo(n, spot.x, spot.y)) { n.state = "atCounter"; n.timer = ri(4, 9); }
+      else { n.state = "leave"; n.timer = 0; }
+      break;
+    }
+    case "atCounter":
+      n.dir = "n";
+      if (n.emoteT <= 0) emote(n, rnd(["coffee", "meeple", "note"]), 2.2);
+      if (n.timer <= 0) { n.counterSpot = null; n.state = "leave"; n.timer = 0; emote(n, "heart", 3); }
+      break;
+
+    case "leave":
+      if (!n.leaving) { n.leaving = true; if (!goTo(n, SPAWN.x, SPAWN.y)) n.leaving = "arrived"; }
+      else if (n.role === "regular") { n.state = "away"; n.timer = ri(25, 70); }
+      else n.dead = true;
+      break;
+
+    case "away":                                  // 熟客：出门溜达一圈再回来
+      if (n.timer <= 0) {
+        n.state = "enter"; n.timer = 1;
+        n.leaving = false; n.lounged = false; n.pickedGame = null;
+        n.px = SPAWN.x * TW + TW / 2; n.py = SPAWN.y * TW + TW - 2;
+        n.dir = "w"; n.path = [];
+        if (n.cap) n.hat = Math.random() < .5;    // 每次来重新决定戴不戴帽
+      }
+      break;
+
+    // 顾客状态机不认识的状态（多半是旧存档里存下来的，比如 "resident"）会让人卡死在原地：
+    // 计时器一路减到负数也没有分支去改 state。兜底把人放回 enter。
+    default:
+      releaseSpot(n);
+      n.state = "enter"; n.timer = ri(1, 3) / 2;
+      break;
+  }
+}
+
+// 放开占着的椅子 / 沙发位，回到能自由行动的状态
+function releaseSpot(n) {
+  if (n.chair) n.chair.by = null;
+  if (n.seat) n.seat.by = null;
+  (n.napSeats || []).forEach(s => (s.by = null));
+  n.chair = null; n.seat = null; n.napSofa = null; n.napSeats = [];
+  n.sitting = false; n.lying = false; n.path = [];
+}
+
+/* ── 睡沙发：店长和老墨共用 ── */
+function lieDown(n) {                          // 已走到沙发前
+  const s = n.napSofa;
+  n.px = (s.x + s.len / 2) * TW;
+  n.py = s.y * TW + TW - 1;
+  n.dir = "w"; n.lying = true; n.sitting = false;
+  // 店长睡整觉，老墨改成打盹：醒着翻游戏架的时间多一些
+  n.task = "nap"; n.timer = n.role === "napper" ? ri(18, 36) : ri(45, 95);
+}
+function wakeUp(n) {
+  n.napSeats.forEach(s => (s.by = null));
+  n.napSeats = []; n.napSofa = null; n.lying = false;
+  n.px = Math.floor(n.px / TW) * TW + TW / 2;
+  emote(n, "coffee", 3);
+  n.task = "wake"; n.timer = 2.5;
+}
+function claimSofa(n) {                        // 占一张空的横排沙发
+  const sofa = SOFAS.find(s => !s.vert && s.seats.every(q => !q.by));
+  if (!sofa) return false;
+  const f = FRONT[sofa.dir];
+  const app = { x: sofa.seats[0].x + f[0], y: sofa.seats[0].y + f[1] };
+  if (!walkable(app.x, app.y) || !goTo(n, app.x, app.y)) return false;
+  sofa.seats.forEach(q => (q.by = n));
+  n.napSofa = sofa; n.napSeats = sofa.seats.slice();
+  n.task = "napGo"; n.timer = 0;
+  return true;
+}
+
+/* 店长：大半时间躺沙发睡觉，偶尔起来巡桌 / 站柜台 */
+function updateOwner(n, dt) {
+  if (n.task === "napGo") { lieDown(n); return; }
+  if (n.timer > 0) {
+    if (n.lying) { if (n.emoteT <= 0 && Math.random() < dt * .12) emote(n, "note", 2.4); }
+    else if (n.task === "check") { if (n.emoteT <= 0 && Math.random() < dt * .7) emote(n, rnd(["dice", "heart", "note", "meeple"])); }
+    else if (n.task === "counter") {
+      n.dir = "n";
+      if (people.some(p => p.state === "atCounter") && n.emoteT <= 0 && Math.random() < dt) emote(n, "coffee", 1.8);
+    }
+    return;
+  }
+  if (n.lying) { wakeUp(n); return; }
+
+  const busy = people.some(p => p.state === "atCounter");
+  const r = Math.random();
+  if (!busy && r < .72) { if (!claimSofa(n)) n.timer = 3; return; }
+  if (r < .82) {
+    const c = rnd(rnd(TABLES).chairs);
+    if (goTo(n, c.x, c.y)) { n.task = "check"; n.timer = ri(5, 10); } else n.timer = 2;
+  } else {
+    if (goTo(n, STAFF_POST.x + 1, STAFF_POST.y)) { n.task = "counter"; n.timer = ri(6, 12); } else n.timer = 2;
+  }
+}
+
+/* 老墨：不上班，几乎只睡，偶尔起来翻翻游戏架 */
+function updateNapper(n, dt) {
+  if (n.task === "napGo") { lieDown(n); return; }
+  if (n.timer > 0) {
+    if (n.lying) { if (n.emoteT <= 0 && Math.random() < dt * .10) emote(n, "cookie", 2.4); }
+    else if (n.task === "browse") {
+      if (n.browseAt) n.dir = n.browseAt.dir;
+      if (n.emoteT <= 0 && Math.random() < dt * .6) emote(n, rnd(["think", "meeple", "cookie"]));
+    }
+    return;
+  }
+  if (n.lying) { wakeUp(n); return; }
+
+  const r = Math.random();
+  if (r < .45) { if (!claimSofa(n)) n.timer = 4; return; }
+  const s = pickShelfSpot();
+  if (s && goTo(n, s.x, s.y)) { n.browseAt = s; n.task = "browse"; n.timer = ri(6, 13); }
+  else n.timer = 3;
+}
+
+/* 程序员：长时间占一张桌敲电脑，偶尔起身续咖啡 */
+function updateCoder(n, dt) {
+  if (n.task === "sitDown") {                  // 已走到椅子上
+    snapSeat(n, n.chair, n.chair.dir);
+    n.task = "work"; n.timer = ri(70, 140);
+    return;
+  }
+  if (n.timer > 0) {
+    if (n.task === "work") {
+      if (n.emoteT <= 0 && Math.random() < dt * .30) emote(n, rnd(["think", "bang", "note", "coffee"]));
+    } else if (n.task === "refill") {
+      n.dir = "n";
+      if (n.emoteT <= 0 && Math.random() < dt * .8) emote(n, "coffee");
+    }
+    return;
+  }
+  if (n.sitting) {                             // 起身
+    n.chair.by = null; n.chair = null; n.sitting = false;
+    n.task = "stretch"; n.timer = 1.5;
+    return;
+  }
+  if (n.task === "stretch") {                  // 去柜台续杯
+    const spot = rnd(COUNTER_SPOTS);
+    if (goTo(n, spot.x, spot.y)) { n.task = "refill"; n.timer = ri(5, 10); } else n.timer = 2;
+    return;
+  }
+  const ch = pickChair();                      // 找张桌子坐下干活
+  if (ch && goTo(n, ch.x, ch.y)) { ch.by = n; n.chair = ch; n.task = "sitDown"; n.timer = 0; }
+  else n.timer = 3;
+}
+
+function updateStaff(n, dt) {
+  if (n.timer > 0) {
+    if (n.task === "counter") {
+      n.dir = "n";
+      if (people.some(p => p.state === "atCounter") && n.emoteT <= 0 && Math.random() < dt) emote(n, "coffee", 1.8);
+    } else if (n.task === "check") {
+      if (n.emoteT <= 0 && Math.random() < dt * .8) emote(n, rnd(["note", "heart", "dice"]));
+    } else if (n.task === "stock") {
+      if (n.stockDir) n.dir = n.stockDir;
+      if (n.emoteT <= 0 && Math.random() < dt * .8) emote(n, "meeple");
+    }
+    return;
+  }
+  const busy = people.some(p => p.state === "atCounter" || p.state === "toCounter");
+  const roll = Math.random();
+  if (busy || roll < .42) {
+    // 两个店员各站柜台的一格，别叠在一起（店长另占 +1）
+    if (goTo(n, STAFF_POST.x + (n.postDX || 0), STAFF_POST.y)) { n.task = "counter"; n.timer = ri(7, 15); }
+    else n.timer = 2;
+  } else if (roll < .72) {
+    const t = rnd(TABLES);
+    const c = rnd(t.chairs);
+    if (goTo(n, c.x, c.y)) { n.task = "check"; n.timer = ri(4, 8); }
+    else n.timer = 2;
+  } else {
+    const s = pickShelfSpot();
+    if (s && goTo(n, s.x, s.y)) { n.task = "stock"; n.stockDir = s.dir; n.timer = ri(5, 11); }
+    else n.timer = 2;
+  }
+}
+
+/* ══ 时间与光 ═════════════════════════════════════════ */
+const DAY = 240;
+let clock = 0;
+function nightLevel() {
+  const p = clock / DAY;
+  if (p < .45) return 0;
+  if (p < .62) return (p - .45) / .17 * .35;
+  return .35 + Math.min(1, (p - .62) / .2) * .30;
+}
+function drawLight(night, time) {
+  lx.clearRect(0, 0, NW, NH);
+  if (night <= .02) return;
+  lx.globalCompositeOperation = "source-over";
+  lx.fillStyle = `rgba(22,28,56,${night})`;
+  lx.fillRect(0, 0, NW, NH);
+  lx.globalCompositeOperation = "destination-out";
+  for (const l of LAMPS) {
+    const cx = l.x * TW + 8, cy = l.y * TW;
+    const r = 54 + Math.sin(time * 2 + l.x) * 2;
+    const g = lx.createRadialGradient(cx, cy, 3, cx, cy, r);
+    g.addColorStop(0, "rgba(0,0,0,.95)");
+    g.addColorStop(.45, "rgba(0,0,0,.55)");
+    g.addColorStop(1, "rgba(0,0,0,0)");
+    lx.fillStyle = g; lx.beginPath(); lx.arc(cx, cy, r, 0, 7); lx.fill();
+  }
+  {                                    // 电视也照亮一小片
+    const cx = (TV.x + TV.w / 2) * TW, cy = TV.y * TW - 6, r = 40;
+    const g = lx.createRadialGradient(cx, cy, 2, cx, cy, r);
+    g.addColorStop(0, "rgba(0,0,0,.7)"); g.addColorStop(1, "rgba(0,0,0,0)");
+    lx.fillStyle = g; lx.beginPath(); lx.arc(cx, cy, r, 0, 7); lx.fill();
+  }
+  lx.globalCompositeOperation = "source-over";
+}
+
+/* ══ 尘埃 ═════════════════════════════════════════════ */
+const reduce = matchMedia("(prefers-reduced-motion: reduce)").matches;
+const motes = Array.from({ length: reduce ? 0 : 34 }, () => ({
+  x: Math.random() * NW, y: 40 + Math.random() * (NH - 80),
+  s: .08 + Math.random() * .18, a: .1 + Math.random() * .25, ph: Math.random() * 6,
+}));
+
+/* ══ 存档：刷新后接着演 ═══════════════════════════════
+   对象之间是互相引用的（人↔椅↔桌），存的时候一律换成下标。 */
+const SAVE_KEY = "bbg-boardgame-v3";
+const PERSON_KEYS = ["castKey", "name", "staff", "role", "build", "collar", "apron",
+  "bag", "laptop", "cap", "hairStyle", "skin", "hair", "shirt", "pants", "style",
+  "hat", "hatColor", "lashes", "glasses", "glassColor", "glassThin", "smallEyes",
+  "faceTaper", "spider", "postDX",
+  "eyeShadow", "skirt", "seed", "px", "py", "dir", "state", "timer", "emote", "emoteT",
+  "sitting", "lying", "browseAt", "pickedGame", "lounged", "leaving", "task", "stockDir"];
+
+function chairId(ch) {
+  for (let t = 0; t < TABLES.length; t++) {
+    const i = TABLES[t].chairs.indexOf(ch);
+    if (i >= 0) return [t, i];
+  }
+  return null;
+}
+function seatId(s) {
+  for (let k = 0; k < SOFAS.length; k++) {
+    const i = SOFAS[k].seats.indexOf(s);
+    if (i >= 0) return [k, i];
+  }
+  return null;
+}
+const chairOf = id => id && TABLES[id[0]] ? TABLES[id[0]].chairs[id[1]] : null;
+const seatOf  = id => id && SOFAS[id[0]]  ? SOFAS[id[0]].seats[id[1]]  : null;
+
+function saveState() {
+  try {
+    localStorage.setItem(SAVE_KEY, JSON.stringify({
+      v: 3, clock, spawnT,
+      cat: { px: cat.px, py: cat.py, nap: cat.nap, dir: cat.dir, tail: cat.tail, path: cat.path },
+      tables: TABLES.map(t => ({ game: t.game, rollT: t.rollT })),
+      people: people.map(n => {
+        const o = {};
+        for (const k of PERSON_KEYS) o[k] = n[k];
+        o.path = n.path;
+        o.chair = n.chair ? chairId(n.chair) : null;
+        o.seat = n.seat ? seatId(n.seat) : null;
+        o.napSofa = n.napSofa ? SOFAS.indexOf(n.napSofa) : -1;
+        o.napSeats = (n.napSeats || []).map(seatId).filter(Boolean);
+        o.counterSpot = n.counterSpot ? COUNTER_SPOTS.indexOf(n.counterSpot) : -1;
+        return o;
+      }),
+    }));
+  } catch (e) { /* 无痕模式 / 存储被禁用时静默降级 */ }
+}
+
+function loadState() {
+  let d;
+  try { d = JSON.parse(localStorage.getItem(SAVE_KEY) || "null"); } catch (e) { return false; }
+  if (!d || d.v !== 3 || !Array.isArray(d.people) || !d.people.length) return false;
+  clock = typeof d.clock === "number" ? d.clock : 0;
+  spawnT = typeof d.spawnT === "number" ? d.spawnT : 1;
+  if (d.cat) Object.assign(cat, d.cat);
+  (d.tables || []).forEach((t, i) => {
+    if (TABLES[i]) { TABLES[i].game = t.game || null; TABLES[i].rollT = t.rollT || 0; }
+  });
+  TABLES.forEach(t => t.chairs.forEach(c => (c.by = null)));
+  SOFAS.forEach(s => s.seats.forEach(q => (q.by = null)));
+  people.length = 0;
+  for (const o of d.people) {
+    const n = makePerson(o.castKey && CAST[o.castKey] ? o.castKey : null);
+    for (const k of PERSON_KEYS) if (o[k] !== undefined) n[k] = o[k];
+    n.path = Array.isArray(o.path) ? o.path : [];
+    if (n.castKey) {                          // 外观永远听 CAST 的，方便随时改形象
+      const c = CAST[n.castKey], look = makePerson(n.castKey);
+      for (const k of ["name", "role", "staff", "build", "collar", "apron", "bag",
+                       "laptop", "cap", "hairStyle", "skin", "hair", "shirt", "pants",
+                       "style", "lashes", "glasses", "glassColor", "glassThin", "smallEyes",
+                       "faceTaper", "spider", "postDX", "eyeShadow", "skirt", "hatColor"]) n[k] = look[k];
+      if (!c.cap) n.hat = false;
+      n._hairHi = null; n._hairSh = null;
+    }
+    n.chair = chairOf(o.chair);
+    n.seat = seatOf(o.seat);
+    n.napSofa = o.napSofa >= 0 ? SOFAS[o.napSofa] : null;
+    n.napSeats = (o.napSeats || []).map(seatOf).filter(Boolean);
+    n.counterSpot = o.counterSpot >= 0 ? COUNTER_SPOTS[o.counterSpot] : null;
+    if (n.chair) n.chair.by = n;
+    if (n.seat) n.seat.by = n;
+    n.napSeats.forEach(s => (s.by = n));
+    people.push(n);
+  }
+  // 存档是老版本存的，里面不会有后来新加的常驻角色 —— 补齐，别让人凭空消失
+  for (const r of RESIDENTS)
+    if (!people.some(p => p.castKey === r[0])) spawnResident(...r);
+  // 没人坐的桌子不该还摆着游戏
+  TABLES.forEach(t => { if (t.chairs.every(c => !c.by)) t.game = null; });
+  return true;
+}
+
+/* ══ 主循环 ═══════════════════════════════════════════ */
+// 四位常驻角色
+function spawnResident(key, tx, ty, task) {
+  const n = makePerson(key);
+  n.px = tx * TW + TW / 2; n.py = ty * TW + TW - 2;
+  // 熟客走的是顾客状态机，得从 enter 起步；有专属行为的角色才用 resident 占位
+  n.state = n.role === "regular" ? "enter" : "resident";
+  n.timer = 0; n.task = task;
+  people.push(n);
+  return n;
+}
+const RESIDENTS = [
+  ["haley",  18, 17, ""],
+  ["owner",  SOFAS[0].x + 2, SOFAS[0].y + 1, "wake"],
+  ["mo",     24, 17, "wake"],
+  ["coder",  20, 17, "stretch"],
+  ["bear",   STAFF_POST.x, STAFF_POST.y, "counter"],
+  ["rabbit", STAFF_POST.x - 1, STAFF_POST.y, "counter"],
+  ["lanwen", 22, 17, ""],
+];
+RESIDENTS.forEach(r => spawnResident(...r));
+
+let spawnT = .5, last = performance.now() / 1000, time = 0;
+
+// 有存档就接着演，没有就当作新开张（上面初始化的店员与店长保留）
+loadState();
+
+let saveT = 0;
+try {
+  addEventListener("pagehide", saveState);
+  addEventListener("visibilitychange", () => {
+    if (typeof document !== "undefined" && document.visibilityState === "hidden") saveState();
+  });
+} catch (e) { /* 无事件环境下跳过 */ }
+
+function frame(now) {
+  now /= 1000;
+  const dt = Math.min(.05, now - last); last = now;
+  time += dt; clock = (clock + dt) % DAY;
+  const night = nightLevel();
+
+  const p = clock / DAY;
+  const rate = p < .1 ? 8 : p < .55 ? 5 : p < .8 ? 6.5 : 15;
+  const cap = p < .85 ? 16 : 7;
+  spawnT -= dt;
+  if (spawnT <= 0) {
+    spawnT = rate * (.6 + Math.random() * .8);
+    if (people.filter(x => !x.staff).length < cap) people.push(makePerson());
+  }
+
+  for (const n of people) update(n, dt, time);
+  for (let i = people.length - 1; i >= 0; i--) if (people[i].dead) people.splice(i, 1);
+  for (const t of TABLES) if (t.rollT > 0) t.rollT -= dt;
+  updateCat(dt);
+
+  saveT += dt;
+  if (saveT >= 2) { saveT = 0; saveState(); }
+
+  /* ---- 绘制 ---- */
+  sx.drawImage(floorTex, 0, 0);
+  drawOuterWalls(sx, night, time);
+
+  const items = [];
+  shelves.forEach(s => items.push({ y: s.y * TW + TW, d: c => drawShelf(c, s) }));
+  wallShelves.forEach(s => items.push({ y: (s.y + s.h) * TW, d: c => drawWallShelf(c, s) }));
+  IWALL_V.forEach(w => items.push({ y: (w.y + w.h) * TW, d: c => drawIWallV(c, w) }));
+  IWALL_H.forEach(w => items.push({ y: (w.y + 1) * TW, d: c => drawIWallH(c, w) }));
+  PILLARS.forEach(pl => items.push({ y: (pl.y + pl.h) * TW, d: c => drawPillar(c, pl) }));
+  TABLES.forEach(t => {
+    t.chairs.forEach(ch => items.push({ y: ch.y * TW + TW - 1, d: c => drawChair(c, ch) }));
+    items.push({ y: (t.y + t.h) * TW, d: c => drawTable(c, t, time) });
+  });
+  SOFAS.forEach(s => items.push({ y: (s.y + s.h) * TW - 2, d: c => drawSofa(c, s) }));
+  items.push({ y: (TV.y + 1) * TW, d: c => drawTV(c, time) });
+  items.push({ y: (COFFEE.y + 1) * TW, d: c => drawCoffeeTable(c) });
+  items.push({ y: (counter.y + 1) * TW, d: c => drawCounter(c, time) });
+  PLANTS.forEach(pl => items.push({ y: pl.y * TW + TW, d: c => drawPlant(c, pl, time) }));
+  people.forEach(n => {
+    if (n.state === "away") return;                 // 不在店里
+    // 坐着的人必须排在自己那把椅子之后，否则会被椅背挡住
+    let sy = n.py;
+    if (n.sitting && n.chair) sy = n.chair.y * TW + TW - .5;
+    else if (n.sitting && n.seat) sy = n.seat.y * TW + TW - .5;
+    items.push({ y: sy, d: c => drawPerson(c, n, time) });
+    // 电脑要排在桌子之后才会落在桌面上（用人物的排序键会被桌子盖住）
+    if (n.laptop && n.sitting && n.chair)
+      items.push({ y: (n.chair.t.y + n.chair.t.h) * TW + .1, d: c => drawSeatedLaptop(c, n, time) });
+  });
+  items.push({ y: cat.py, d: c => drawCat(c, time) });
+
+  items.sort((a, b) => a.y - b.y);
+  for (const it of items) it.d(sx);
+
+  drawVoid(sx);
+  LAMPS.forEach(l => drawLamp(sx, l));
+
+  // 电视洒在地毯上的冷光
+  {
+    const cx = (TV.x + TV.w / 2) * TW, cy = TV.y * TW - 4;
+    const flick = .5 + Math.abs(Math.sin(time * 3.3)) * .22;
+    sx.globalCompositeOperation = "lighter";
+    const g = sx.createRadialGradient(cx, cy, 2, cx, cy, 60);
+    g.addColorStop(0, `rgba(110,175,215,${.16 * flick})`);
+    g.addColorStop(1, "rgba(110,175,215,0)");
+    sx.fillStyle = g; sx.beginPath(); sx.arc(cx, cy, 60, 0, 7); sx.fill();
+    sx.globalCompositeOperation = "source-over";
+  }
+
+  for (const m of motes) {
+    m.x += Math.sin(time * .6 + m.ph) * .15 + .06;
+    m.y -= m.s * .3;
+    if (m.y < 36) { m.y = NH - 30; m.x = Math.random() * NW; }
+    if (m.x > NW) m.x = 0;
+    sx.fillStyle = `rgba(255,236,200,${m.a * (1 - night * .4)})`;
+    sx.fillRect(Math.round(m.x), Math.round(m.y), 1, 1);
+  }
+
+  drawLight(night, time);
+  if (night > .02) sx.drawImage(lightC, 0, 0);
+  if (night > .05) {
+    sx.globalCompositeOperation = "lighter";
+    for (const l of LAMPS) {
+      const cx = l.x * TW + 8, cy = l.y * TW, r = 40;
+      const g = sx.createRadialGradient(cx, cy, 1, cx, cy, r);
+      g.addColorStop(0, `rgba(255,196,110,${.18 * night})`);
+      g.addColorStop(1, "rgba(255,196,110,0)");
+      sx.fillStyle = g; sx.beginPath(); sx.arc(cx, cy, r, 0, 7); sx.fill();
+    }
+    sx.globalCompositeOperation = "source-over";
+  }
+  if (night < .3) {
+    sx.globalCompositeOperation = "lighter";
+    for (const wx of [4, 16, 24]) {
+      sx.fillStyle = `rgba(255,226,160,${.05 * (1 - night / .3)})`;
+      sx.beginPath();
+      sx.moveTo(wx * TW, 32); sx.lineTo(wx * TW + TW * 3, 32);
+      sx.lineTo(wx * TW + TW * 3 + 44, 148); sx.lineTo(wx * TW + 44, 148);
+      sx.closePath(); sx.fill();
+    }
+    sx.globalCompositeOperation = "source-over";
+  }
+  drawTitleBlock(sx, time);
+
+  const vg = sx.createRadialGradient(NW / 2, NH / 2, NH * .42, NW / 2, NH / 2, NH * 1.0);
+  vg.addColorStop(0, "rgba(0,0,0,0)"); vg.addColorStop(1, "rgba(20,14,8,.32)");
+  sx.fillStyle = vg; sx.fillRect(0, 0, NW, NH);
+
+  vctx.imageSmoothingEnabled = false;
+  vctx.drawImage(scene, 0, 0, NW, NH, 0, 0, NW * SCALE, NH * SCALE);
+  requestAnimationFrame(frame);
+}
+requestAnimationFrame(frame);
+})();
+</script>

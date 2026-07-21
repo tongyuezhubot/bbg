@@ -1,0 +1,5 @@
+.DS_Store
+
+# 检视工具的产物：都是随时能重新生成的 PNG / 中间文件
+tools/sim.js
+tools/*.png
