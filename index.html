@@ -1509,11 +1509,14 @@ function personGeom(n) {
     // tallThin 和 tall 的 legLen + torsoH 相同 —— 雪兔要和店长一样高，只是瘦一圈
     headHW: 4,
     torsoHW: build === "tall" ? 6 : build === "tallSlim" ? 5 : build === "stout" ? 6
-           : build === "chubby" ? 5 : build === "tallThin" ? 3 : build === "tallLean" ? 4 : 4,
+           : build === "chubby" ? 5 : build === "tallThin" ? 3 : build === "tallLean" ? 4
+           : build === "slimShort" ? 3 : 4,
     legLen:  build === "tall" ? 8 : build === "tallSlim" ? 7 : build === "stout" ? 4
-           : build === "chubby" ? 4 : build === "tallThin" ? 8 : build === "tallLean" ? 7 : 5,
+           : build === "chubby" ? 4 : build === "tallThin" ? 8 : build === "tallLean" ? 7
+           : build === "slimShort" ? 7 : 5,
     torsoH:  build === "tall" ? 10 : build === "tallSlim" ? 8 : build === "stout" ? 7
-           : build === "chubby" ? 7 : build === "tallThin" ? 10 : build === "tallLean" ? 8 : 7,
+           : build === "chubby" ? 7 : build === "tallThin" ? 10 : build === "tallLean" ? 8
+           : build === "slimShort" ? 8 : 7,
     legW:    build === "stout" || build === "chubby" ? 3 : 2,
   };
 }
@@ -1661,11 +1664,6 @@ function bodyPass(ctx, n, g, cx, base, time, mono) {
     if (n.dir === "s") { ctx.fillRect(elx, ey, ew, eh); ctx.fillRect(cx + 2, ey, ew, eh); }
     else if (n.dir === "e") { ctx.fillRect(cx + 2, ey, ew, eh); }
     else if (n.dir === "w") { ctx.fillRect(elx, ey, ew, eh); }
-    if (big) {                                  // 大眼太小，高光占一半会发灰 —— 只在上沿点半透明一线提亮
-      ctx.fillStyle = "rgba(255,255,255,.32)";
-      if (n.dir !== "e") ctx.fillRect(cx - 3, ey, 1, 1);
-      if (n.dir !== "w") ctx.fillRect(cx + 3, ey, 1, 1);
-    }
     if (n.lashes && !blink && n.dir !== "n") {
       ctx.fillStyle = "#2a2118";
       if (n.dir !== "e") ctx.fillRect(cx - 3, ey - 1, 1, 1);
@@ -1871,10 +1869,9 @@ const CAST = {
     skin: "#f7dcc0", hair: "#5c4636", hairStyle: "bob", lashes: true,
     shirt: "#7fb2c4", pants: "#3d4a63", postDX: -1,
   },
-  baibai: {                         // 白白：暖棕中分蓬松过肩卷发、棕色大眼、棕卫衣配米色内搭、店员
-    name: "白白", role: "clerk", build: "tallLean", resident: true,
-    skin: "#eec39a", hair: "#5b3d27", hairStyle: "wavy", lashes: true,
-    bigEyes: true, eyeColor: "#3a2410",
+  baibai: {                         // 白白：暖棕中分蓬松过肩卷发、略大的眼、瘦、棕卫衣配米色内搭、店员
+    name: "白白", role: "clerk", build: "slimShort", resident: true,
+    skin: "#eec39a", hair: "#5b3d27", hairStyle: "wavy", lashes: true, bigEyes: true,
     shirt: "#5c3f2b", pants: "#3a2c22", hoodie: true, inner: "#e7ddc8", postDX: 1,
   },
   lanwen: {                         // lanwen：蜘蛛侠战衣但不戴面具、瘦、中分
