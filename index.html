@@ -1602,13 +1602,16 @@ function personGeom(n) {
     headHW: 4,
     torsoHW: build === "tall" ? 6 : build === "tallSlim" ? 5 : build === "stout" ? 6
            : build === "chubby" ? 5 : build === "tallThin" ? 3 : build === "tallLean" ? 4
-           : build === "slimShort" ? 3 : build === "leanTall" ? 4 : build === "slimStout" ? 4 : 4,
+           : build === "slimShort" ? 3 : build === "leanTall" ? 4 : build === "slimStout" ? 4
+           : build === "petite" ? 3 : 4,
     legLen:  build === "tall" ? 8 : build === "tallSlim" ? 7 : build === "stout" ? 4
            : build === "chubby" ? 4 : build === "tallThin" ? 8 : build === "tallLean" ? 7
-           : build === "slimShort" ? 7 : build === "leanTall" ? 8 : build === "slimStout" ? 4 : 5,
+           : build === "slimShort" ? 7 : build === "leanTall" ? 8 : build === "slimStout" ? 4
+           : build === "petite" ? 6 : 5,
     torsoH:  build === "tall" ? 10 : build === "tallSlim" ? 8 : build === "stout" ? 7
            : build === "chubby" ? 7 : build === "tallThin" ? 10 : build === "tallLean" ? 8
-           : build === "slimShort" ? 8 : build === "leanTall" ? 10 : build === "slimStout" ? 7 : 7,
+           : build === "slimShort" ? 8 : build === "leanTall" ? 10 : build === "slimStout" ? 7
+           : build === "petite" ? 7 : 7,
     legW:    build === "stout" || build === "chubby" ? 3 : 2,
   };
 }
@@ -1618,7 +1621,7 @@ function bodyPass(ctx, n, g, cx, base, time, mono) {
   const moving = n.path && n.path.length > 0;
   const walk = moving ? Math.floor(time * 7 + n.seed) % 4 : 0;
   const { torsoHW: hw, headHW: hhw, legLen, torsoH, legW, build } = g;
-  const bodyBase = n.sitting ? base - 2 : base - legLen;
+  const bodyBase = n.sitting ? base - 6 : base - legLen;   // 坐着时臀部抬到椅面上，别贴地显矮
   const hy = bodyBase - torsoH - 7;               // 头顶
   const legL = build === "stout" ? cx - 4 : cx - 3;
   const F = c => { ctx.fillStyle = mono || c; };
@@ -1630,6 +1633,11 @@ function bodyPass(ctx, n, g, cx, base, time, mono) {
     ctx.fillRect(cx + 1, base - legLen + Math.max(0, -la), legW, legLen - Math.abs(la));
     F(C.dark);
     ctx.fillRect(legL, base - 1, legW, 1); ctx.fillRect(cx + 1, base - 1, legW, 1);
+    if (n.ripped && !mono) {                     // 破洞牛仔裤：膝盖处露出皮肤
+      ctx.fillStyle = n.skin;
+      ctx.fillRect(legL, base - legLen + 2, legW, 1);
+      ctx.fillRect(cx + 1, base - legLen + 3, legW, 1);
+    }
   }
 
   F(n.shirt);                                    // 躯干
@@ -1812,13 +1820,18 @@ function bodyPass(ctx, n, g, cx, base, time, mono) {
 // 蜘蛛侠面具：红色头罩 + 蛛网 + 白色大眼罩（跟随尖脸收窄、按朝向出眼）
 function drawSpiderMask(ctx, n, cx, hy, hhw, mono) {
   ctx.fillStyle = mono || "#c33027";
+  // 圆顶：补上头发那段高度，别让头显得扁
+  ctx.fillRect(cx - 2, hy - 3, 5, 1);
+  ctx.fillRect(cx - hhw + 1, hy - 2, hhw * 2 - 1, 1);
+  ctx.fillRect(cx - hhw, hy - 1, hhw * 2 + 1, 1);
   for (let r = 0; r < 8; r++) {                  // 罩住整颗头，尖脸下半收窄
     const t = n.faceTaper ? FACE_TAPER[r] : 0;
     ctx.fillRect(cx - hhw + t, hy + r, (hhw - t) * 2 + 1, 1);
   }
   if (mono) return;
+  ctx.fillStyle = "rgba(255,255,255,.10)"; ctx.fillRect(cx - hhw + 1, hy - 2, hhw, 1);  // 顶光
   ctx.fillStyle = "rgba(0,0,0,.30)";             // 蛛网：一竖 + 两横 + 放射
-  ctx.fillRect(cx, hy, 1, 8);
+  ctx.fillRect(cx, hy - 2, 1, 10);
   ctx.fillRect(cx - hhw + 1, hy + 1, hhw * 2 - 1, 1);
   ctx.fillRect(cx - 2, hy + 6, 5, 1);
   ctx.fillRect(cx - hhw + 1, hy + 3, 2, 1); ctx.fillRect(cx + hhw - 2, hy + 3, 2, 1);
@@ -2042,6 +2055,16 @@ const CAST = {
     glasses: true, glassThin: true, glassColor: "#9a90a6",
     shirt: "#1d3a5c", pants: "#2a2a33", starry: true,
   },
+  kk: {                             // kk：又高又帅的男生、清爽短发、黄色 T 恤
+    name: "kk", role: "regular", build: "tall", resident: true,
+    skin: "#e8bd90", hair: "#2a2018", hairStyle: "short",
+    shirt: "#eec244", pants: "#3a4a63",
+  },
+  lulu: {                           // 鹿鹿：潮女、瘦、比白白矮、时髦短发 + 睫毛眼影、破洞牛仔裤
+    name: "鹿鹿", role: "regular", build: "petite", resident: true,
+    skin: "#f2cba2", hair: "#1a1a1a", hairStyle: "bob", lashes: true,
+    eyeShadow: "#b56a86", shirt: "#d86a8a", pants: "#4a6ba0", ripped: true,
+  },
   lanwen: {                         // lanwen：蜘蛛侠战衣 + 面具、瘦、中分
     name: "lanwen", role: "regular", build: "tallLean", resident: true,
     skin: "#e8bd90", hair: "#2b2320", hairStyle: "middle",
@@ -2084,6 +2107,7 @@ function makePerson(castKey) {
     faceTaper: !!(c && c.faceTaper),
     spider: !!(c && c.spider),
     mask: !!(c && c.mask),
+    ripped: !!(c && c.ripped),
     postDX: c && c.postDX !== undefined ? c.postDX : 0,
     eyeShadow: c ? c.eyeShadow || null : null,
     skirt: c ? c.skirt || null : null,
@@ -2169,6 +2193,62 @@ function pickSeat() {
   return free.length ? rnd(free) : null;
 }
 
+/* ══ 牌搭子：kk / 店长 / 小熊 / 老墨 时常凑一桌开局 ═══════ */
+const GANG = ["owner", "bear", "mo", "kk"];
+let gangT = 25, gang = null;
+function leaveActivity(n) {                     // 从当前的坐/躺/占座里抽身
+  if (n.chair) { n.chair.by = null; n.chair = null; }
+  if (n.seat) { n.seat.by = null; n.seat = null; }
+  if (n.napSeats && n.napSeats.length) n.napSeats.forEach(s => (s.by = null));
+  n.napSeats = []; n.napSofa = null; n.lying = false; n.sitting = false;
+  n.emote = null; n.emoteT = 0; n.path = [];
+}
+function updateGangMember(n, dt) {
+  const ch = n.gangSeat;
+  if (!ch) return;
+  if (!n.sitting) {
+    const t = tileOf(n);
+    if (t.x === ch.x && t.y === ch.y) {         // 到位坐下开局
+      snapSeat(n, ch, ch.dir);
+      n.chair = ch;                             // 让排序 / 桌面逻辑照常识别
+      if (!ch.t.game) ch.t.game = rnd(GAMES);
+    } else goTo(n, ch.x, ch.y);
+    return;
+  }
+  if (n.emoteT <= 0 && Math.random() < dt * .6)
+    emote(n, rnd(["dice", "meeple", "heart", "think", "bang", "note"]));
+}
+function endGang() {
+  if (!gang) return;
+  for (const n of gang.members) {
+    if (n.gangSeat) { n.gangSeat.by = null; n.gangSeat = null; }
+    n.chair = null; n.sitting = false; n.timer = 0; n.task = null; n.state = "seek";
+  }
+  if (gang.table.chairs.every(c => !c.by)) gang.table.game = null;
+  gang = null; gangT = ri(70, 140);
+}
+function updateGang(dt) {
+  if (gang) {
+    if (!gang.table.game) gang.table.game = rnd(GAMES);
+    gang.timer -= dt;
+    if (gang.timer <= 0) endGang();
+    return;
+  }
+  gangT -= dt;
+  if (gangT > 0) return;
+  const members = GANG.map(k => people.find(p => p.castKey === k && !p.dead && p.state !== "away"));
+  if (members.some(m => !m)) { gangT = 8; return; }          // 有人不在，晚点再约
+  const table = TABLES.find(t => t.chairs.filter(c => !c.by).length >= members.length);
+  if (!table) { gangT = 12; return; }
+  const free = table.chairs.filter(c => !c.by).slice(0, members.length);
+  members.forEach((n, i) => {
+    leaveActivity(n);
+    free[i].by = n; n.gangSeat = free[i]; n.task = "gang"; n.state = "gang"; n.timer = 0;
+  });
+  table.game = table.game || rnd(GAMES);
+  gang = { table, members, timer: ri(50, 95) };
+}
+
 function update(n, dt, time) {
   if (n.emoteT > 0) n.emoteT -= dt; else n.emote = null;
 
@@ -2185,6 +2265,7 @@ function update(n, dt, time) {
     else { n.px += dx / d * sp; n.py += dy / d * sp; }
     return;
   }
+  if (n.gangSeat) return updateGangMember(n, dt);   // 组队玩桌游时接管一切逻辑
   n.timer -= dt;
   switch (n.role) {
     case "owner":  return updateOwner(n, dt);
@@ -2510,7 +2591,7 @@ const SAVE_KEY = "bbg-boardgame-v3";
 const PERSON_KEYS = ["castKey", "name", "staff", "role", "build", "collar", "apron",
   "bag", "laptop", "cap", "hairStyle", "skin", "hair", "shirt", "pants", "style",
   "hat", "hatColor", "lashes", "glasses", "glassColor", "glassThin", "smallEyes", "bigEyes",
-  "eyeColor", "hoodie", "inner", "firework", "starry", "robe", "eyebrow", "faceTaper", "spider", "mask", "postDX",
+  "eyeColor", "hoodie", "inner", "firework", "starry", "robe", "eyebrow", "faceTaper", "spider", "mask", "ripped", "postDX",
   "eyeShadow", "skirt", "seed", "px", "py", "dir", "state", "timer", "emote", "emoteT",
   "sitting", "lying", "browseAt", "pickedGame", "lounged", "leaving", "task", "stockDir"];
 
@@ -2574,7 +2655,7 @@ function loadState() {
       for (const k of ["name", "role", "staff", "build", "collar", "apron", "bag",
                        "laptop", "cap", "hairStyle", "skin", "hair", "shirt", "pants",
                        "style", "lashes", "glasses", "glassColor", "glassThin", "smallEyes", "bigEyes",
-                       "eyeColor", "hoodie", "inner", "firework", "starry", "robe", "eyebrow", "faceTaper", "spider", "mask", "postDX", "eyeShadow", "skirt", "hatColor"]) n[k] = look[k];
+                       "eyeColor", "hoodie", "inner", "firework", "starry", "robe", "eyebrow", "faceTaper", "spider", "mask", "ripped", "postDX", "eyeShadow", "skirt", "hatColor"]) n[k] = look[k];
       n.hat = !!c.cap;                            // 帽子只认 CAST 设定（白白恒戴，其余常驻不戴）
       n._hairHi = null; n._hairSh = null;
     }
@@ -2619,6 +2700,8 @@ const RESIDENTS = [
   ["yanhua", 25, 16, ""],
   ["liangzi", 30, 16, ""],
   ["lige",   35, 16, ""],
+  ["kk",     20, 15, ""],
+  ["lulu",   37, 16, ""],
 ];
 RESIDENTS.forEach(r => spawnResident(...r));
 
@@ -2699,6 +2782,7 @@ function frame(now) {
     if (people.filter(x => !x.staff).length < cap) people.push(makePerson());
   }
 
+  updateGang(dt);
   for (const n of people) update(n, dt, time);
   for (let i = people.length - 1; i >= 0; i--) if (people[i].dead) people.splice(i, 1);
   for (const t of TABLES) if (t.rollT > 0) t.rollT -= dt;
@@ -2733,7 +2817,18 @@ function frame(now) {
     // 坐着的人必须排在自己那把椅子之后，否则会被椅背挡住
     let sy = n.py;
     if (n.sitting && n.chair) sy = n.chair.y * TW + TW - .5;
-    else if (n.sitting && n.seat) sy = n.seat.y * TW + TW - .5;
+    // 竖排沙发的靠背在两侧不在身后，坐者要整体压在沙发之后画，否则会被沙发挡住
+    else if (n.sitting && n.seat) sy = n.seat.sofa && n.seat.sofa.vert
+      ? (n.seat.sofa.y + n.seat.sofa.len) * TW + 1
+      : n.seat.y * TW + TW - .5;
+    else if (!n.lying) {
+      // 站在桌子占地范围里的人（刚从上排椅子起身 / 绕桌走）要画在桌子之前，否则腿被桌面挡没
+      for (const t of TABLES) {
+        if (n.px >= t.x * TW && n.px < (t.x + t.w) * TW &&
+            n.py >= t.y * TW - 8 && n.py <= (t.y + t.h) * TW)
+          sy = Math.max(sy, (t.y + t.h) * TW + 2);
+      }
+    }
     items.push({ y: sy, d: c => drawPerson(c, n, time) });
     // 电脑要排在桌子之后才会落在桌面上（用人物的排序键会被桌子盖住）
     if (n.laptop && n.sitting && n.chair)
