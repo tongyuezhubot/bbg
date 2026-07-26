@@ -2245,6 +2245,14 @@ function snapSeat(n, cell, dir) {
   n.dir = flatDir(dir);
   n.sitting = true;
 }
+// 起身：把落座时那 4px 偏移退回去，回到走路用的站位。不退的话，北侧椅子
+// （dir "s"）的人会站在自己格子往桌里挪过的位置上，而桌子从格子上沿再往上
+// 画 6 格素，正好把整段腿盖掉。座位格自己是能走的，所以退回来是安全的。
+function standAt(n, cell) {
+  if (!cell) return;
+  n.px = cell.x * TW + TW / 2;
+  n.py = cell.y * TW + TW - 2;
+}
 // 沙发是实心的：从坐者正面那一排里挑一个离目标座位最近的落脚点
 const FRONT = { n: [0, -1], s: [0, 1], e: [1, 0], w: [-1, 0] };
 function sofaApproach(seat) {
@@ -2294,7 +2302,7 @@ function pickSeat() {
 const GANG = ["owner", "bear", "mo", "kk"];
 let gangT = 25, gang = null;
 function leaveActivity(n) {                     // 从当前的坐/躺/占座里抽身
-  if (n.chair) { n.chair.by = null; n.chair = null; }
+  if (n.chair) { standAt(n, n.chair); n.chair.by = null; n.chair = null; }
   if (n.seat) { n.seat.by = null; n.seat = null; }
   if (n.napSeats && n.napSeats.length) n.napSeats.forEach(s => (s.by = null));
   n.napSeats = []; n.napSofa = null; n.lying = false; n.sitting = false;
@@ -2318,7 +2326,7 @@ function updateGangMember(n, dt) {
 function endGang() {
   if (!gang) return;
   for (const n of gang.members) {
-    if (n.gangSeat) { n.gangSeat.by = null; n.gangSeat = null; }
+    if (n.gangSeat) { standAt(n, n.gangSeat); n.gangSeat.by = null; n.gangSeat = null; }
     n.chair = null; n.sitting = false; n.timer = 0; n.task = null; n.state = "seek";
   }
   if (gang.table.chairs.every(c => !c.by)) gang.table.game = null;
@@ -2443,6 +2451,7 @@ function update(n, dt, time) {
       }
       if (n.timer <= 0) {
         const t2 = n.chair.t;
+        standAt(n, n.chair);
         n.chair.by = null; n.chair = null; n.sitting = false;
         if (t2.chairs.every(c => !c.by)) t2.game = null;
         // 免费小店：不结账。一半人顺路去服务台还游戏 / 续杯，其余直接走
@@ -2491,7 +2500,7 @@ function update(n, dt, time) {
 
 // 放开占着的椅子 / 沙发位，回到能自由行动的状态
 function releaseSpot(n) {
-  if (n.chair) n.chair.by = null;
+  if (n.chair) { standAt(n, n.chair); n.chair.by = null; }
   if (n.seat) n.seat.by = null;
   (n.napSeats || []).forEach(s => (s.by = null));
   n.chair = null; n.seat = null; n.napSofa = null; n.napSeats = [];
@@ -2589,6 +2598,7 @@ function updateCoder(n, dt) {
     return;
   }
   if (n.sitting) {                             // 起身
+    standAt(n, n.chair);
     n.chair.by = null; n.chair = null; n.sitting = false;
     n.task = "stretch"; n.timer = 1.5;
     return;

@@ -1,7 +1,8 @@
 import re, sys, os
 h=open(os.path.join(os.path.dirname(__file__),'..','index.html')).read()
-js=re.search(r'<script>(.*)</script>', h, re.S).group(1)
-js=js.replace('let saveT = 0;','let saveT = 0; globalThis.__api={saveState,loadState,get people(){return people},CAST,personGeom,SAVE_KEY};')
+# 非贪婪：只要店本身那块 <script>，别把落地页的脚本和中间的 HTML 也抠进来
+js=re.search(r'<script>(.*?)</script>', h, re.S).group(1)
+js=js.replace('let saveT = 0;','let saveT = 0; globalThis.__api={saveState,loadState,get people(){return people},CAST,personGeom,SAVE_KEY,TABLES,TW};')
 stub='''
 let RAF=[]; globalThis.requestAnimationFrame=f=>RAF.push(f);
 globalThis.performance={now:()=>0}; globalThis.matchMedia=()=>({matches:false});
@@ -18,12 +19,17 @@ const A=globalThis.__api; let t=0; const step=1/30;
 let sideWalk=0, walkFrames=0;          // 走路时侧身的帧数 —— 改成平移后应当恒为 0
 let sideAny=0, allFrames=0;            // 任何状态下侧身的帧数（躺着除外，躺姿本来就是侧的）
 const sideWhere={};
+let inTable=0; const inTableWhere={};   // 站进桌子里的帧数（腿会被桌面盖没）
 const run=(min)=>{const s={};for(let i=0;i<30*60*min;i++){t+=step*1000;const f=RAF.shift();if(!f)break;f(t);
   for(const p of A.people){
     if(!p.lying){ allFrames++;
       if(p.dir==='e'||p.dir==='w'){ sideAny++;
         const k=(p.role==='regular'||!p.castKey?p.state:p.task)||'?'; sideWhere[k]=(sideWhere[k]||0)+1; } }
     if(p.path&&p.path.length){ walkFrames++; if(p.dir==='e'||p.dir==='w') sideWalk++; }
+    // 站着的人落在桌子格子里 ⇒ 桌面会从上沿再往上盖 6px，腿会被整段吃掉
+    if(!p.sitting&&!p.lying) for(const tb of A.TABLES)
+      if(p.px>tb.x*A.TW&&p.px<(tb.x+tb.w)*A.TW&&p.py>tb.y*A.TW&&p.py<(tb.y+tb.h)*A.TW){
+        inTable++; inTableWhere[tb.label]=(inTableWhere[tb.label]||0)+1; }
     if(!p.castKey) continue; const o=s[p.castKey]=s[p.castKey]||{n:0,lie:0,st:new Set(),x:[]};
     o.n++; if(p.lying)o.lie++; o.st.add(p.role==='regular'?p.state:p.task); o.x.push(Math.round(p.px)); }}
   return s;};
@@ -41,6 +47,9 @@ for(const k of Object.keys(A.CAST)){const p=A.people.find(x=>x.castKey===k);
 console.log('\\n── 走路一律平移（含随机顾客，不只是常驻） ──');
 console.log(`走路帧 ${walkFrames}，其中侧身 ${sideWalk} 帧  ${sideWalk===0?'← 通过':'← 失败'}`);
 console.log(`站着/坐着共 ${allFrames} 帧，其中侧身 ${sideAny} 帧  ${sideAny===0?'← 通过':'← 失败: '+JSON.stringify(sideWhere)}`);
+
+console.log('\\n── 起身不留落座偏移：没人站在桌子格子里 ──');
+console.log(`站着的帧里，落在桌子格子内 ${inTable} 帧  ${inTable===0?'← 通过':'← 失败: '+JSON.stringify(inTableWhere)}`);
 
 console.log('\\n── 体型对照（站姿总高 = 腿 + 躯干） ──');
 for(const k of Object.keys(A.CAST)){const p=A.people.find(x=>x.castKey===k);const g=A.personGeom(p);
