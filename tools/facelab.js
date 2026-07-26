@@ -7,7 +7,7 @@ globalThis.fs=fs; globalThis.zlib=require("zlib");
 head+="\nglobalThis.MiniCtx=MiniCtx; globalThis.writePNG=writePNG;";
 (0,eval)(head);
 
-let js=fs.readFileSync(__dirname+"/../index.html","utf8").match(/<script>([\s\S]*)<\/script>/)[1];
+let js=fs.readFileSync(__dirname+"/../index.html","utf8").match(/<script>([\s\S]*?)<\/script>/)[1];
 js=js.replace("let saveT = 0;","let saveT = 0; globalThis.__api={drawPerson,makePerson,CAST,personGeom};");
 const RAF=[]; globalThis.requestAnimationFrame=f=>RAF.push(f);
 globalThis.performance={now:()=>0}; globalThis.matchMedia=()=>({matches:false});

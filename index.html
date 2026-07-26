@@ -349,7 +349,7 @@ box(VOID.x, VOID.y, VOID.w, VOID.h);
 
 // 靠墙书架（横向）
 const shelves = [];
-// wall = 靠哪面墙。"s"（贴南墙）的架子背对镜头，要整体退到人物之后画
+// wall = 靠哪面墙，"s" 即贴南墙、背对镜头的那两排（排序上不再特判，见 items 那段）
 const addShelf = (x, y, w, wall = "n") => { shelves.push({ x, y, w, wall }); box(x, y, w, 1); };
 addShelf(2, 2, 10); addShelf(14, 2, 5); addShelf(20, 2, 8);
 addShelf(9, 26, 5, "s"); addShelf(24, 26, 13, "s");
@@ -2264,6 +2264,14 @@ function sofaApproach(seat) {
   const dist = a => Math.abs(a.x - seat.x) + Math.abs(a.y - seat.y);
   return cands.reduce((best, a) => dist(a) < dist(best) ? a : best);
 }
+// 这一格上是不是已经坐着人了。站到坐着的人身上，画面里就是两个人叠在一张椅子上
+function seatTaken(x, y) {
+  for (const t of TABLES) for (const c of t.chairs)
+    if (c.by && c.x === x && c.y === y) return true;
+  for (const s of SOFAS) for (const q of s.seats)
+    if (q.by && q.x === x && q.y === y) return true;
+  return false;
+}
 function pickShelfSpot() {
   const pool = [];
   for (const s of shelves) for (let i = 0; i < s.w; i++) {
@@ -2280,7 +2288,10 @@ function pickShelfSpot() {
   }
   for (const w of IWALL_H) for (let i = 0; i < w.w; i++)
     if (walkable(w.x + i, w.y + 1)) pool.push({ x: w.x + i, y: w.y + 1, dir: "n" });
-  return pool.length ? rnd(pool) : null;
+  // 椅子格一概不选：看架子要站好几秒，中途椅子被客人认领就会两个人叠在一起
+  const chairs = new Set(TABLES.flatMap(t => t.chairs).map(c => c.x + "," + c.y));
+  const free = pool.filter(q => !chairs.has(q.x + "," + q.y) && !seatTaken(q.x, q.y));
+  return free.length ? rnd(free) : null;
 }
 function pickChair() {
   const cands = [];
@@ -2550,12 +2561,16 @@ function updateOwner(n, dt) {
   }
   if (n.lying) { wakeUp(n); return; }
 
+  if (n.chair) { n.chair.by = null; n.chair = null; }   // 还回巡台时占的椅子
   const busy = people.some(p => p.state === "atCounter");
   const r = Math.random();
   if (!busy && r < .72) { if (!claimSofa(n)) n.timer = 3; return; }
   if (r < .82) {
-    const c = rnd(rnd(TABLES).chairs);
-    if (goTo(n, c.x, c.y)) { n.task = "check"; n.timer = ri(5, 10); } else n.timer = 2;
+    // 只挑空椅子，并且出发前就占下：以前是 rnd(rnd(TABLES).chairs)，直接踩到客人身上
+    const free = TABLES.flatMap(t => t.chairs).filter(c => !c.by);
+    const c = free.length ? rnd(free) : null;
+    if (c && goTo(n, c.x, c.y)) { c.by = n; n.chair = c; n.task = "check"; n.timer = ri(5, 10); }
+    else n.timer = 2;
   } else {
     if (goTo(n, STAFF_POST.x + 1, STAFF_POST.y)) { n.task = "counter"; n.timer = ri(6, 12); } else n.timer = 2;
   }
@@ -2626,6 +2641,7 @@ function updateStaff(n, dt) {
     }
     return;
   }
+  if (n.chair) { n.chair.by = null; n.chair = null; }   // 还回巡台时占的椅子
   const busy = people.some(p => p.state === "atCounter" || p.state === "toCounter");
   const roll = Math.random();
   if (busy) {
@@ -2637,9 +2653,11 @@ function updateStaff(n, dt) {
     if (goTo(n, STAFF_POST.x + (n.postDX || 0), STAFF_POST.y)) { n.task = "counter"; n.timer = ri(2, 4); }
     else n.timer = 2;
   } else if (roll < .60) {
-    const t = rnd(TABLES);
-    const c = rnd(t.chairs);
-    if (goTo(n, c.x, c.y)) { n.task = "check"; n.timer = ri(4, 8); }
+    // 巡台只站空椅子。以前是 rnd(t.chairs)，会直接踩到正在玩的客人身上
+    const free = TABLES.flatMap(t => t.chairs).filter(c => !c.by);
+    const c = free.length ? rnd(free) : null;
+    // 出发前就占下这把椅子：只判空再走的话，路上会被客人认领，到了就叠在一起
+    if (c && goTo(n, c.x, c.y)) { c.by = n; n.chair = c; n.task = "check"; n.timer = ri(4, 8); }
     else n.timer = 2;
   } else {
     const s = pickShelfSpot();
@@ -2779,6 +2797,16 @@ function loadState() {
   // 存档是老版本存的，里面不会有后来新加的常驻角色 —— 补齐，别让人凭空消失
   for (const r of RESIDENTS)
     if (!people.some(p => p.castKey === r[0])) spawnResident(...r);
+  // 组队状态没进存档：重开后这些人会攥着椅子不放，而 endGang 又能把 by 清掉，
+  // 于是同一把椅子被第二个人认领。索性把他们放回普通流程，让座位重新分配
+  gang = null; gangT = ri(70, 140);
+  for (const n of people) {
+    if (n.state !== "gang" && n.task !== "gang") continue;
+    releaseSpot(n);
+    n.task = null;
+    n.state = n.role === "regular" ? "seek" : "resident";
+    n.timer = 0;
+  }
   // 没人坐的桌子不该还摆着游戏
   TABLES.forEach(t => { if (t.chairs.every(c => !c.by)) t.game = null; });
   return true;
@@ -2903,8 +2931,8 @@ function frame(now) {
   drawOuterWalls(sx, night, time);
 
   const items = [];
-  // 南墙书架的正面朝里、背对镜头，排序键用它的顶边，走廊上的人才不会被架子埋掉小腿
-  shelves.forEach(s => items.push({ y: s.wall === "s" ? s.y * TW - 10 : s.y * TW + TW, d: c => drawShelf(c, s) }));
+  // 书架一律按自己格子的下沿排序：南墙那两排离镜头最近，就该压在走廊上的人前面
+  shelves.forEach(s => items.push({ y: s.y * TW + TW, d: c => drawShelf(c, s) }));
   wallShelves.forEach(s => items.push({ y: (s.y + s.h) * TW, d: c => drawWallShelf(c, s) }));
   IWALL_V.forEach(w => items.push({ y: (w.y + w.h) * TW, d: c => drawIWallV(c, w) }));
   IWALL_H.forEach(w => items.push({ y: (w.y + 1) * TW, d: c => drawIWallH(c, w) }));

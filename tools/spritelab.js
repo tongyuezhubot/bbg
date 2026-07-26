@@ -107,7 +107,7 @@ function crc32(b) {
 
 /* ── 从 HTML 里取出真正在用的绘制代码 ── */
 const html = fs.readFileSync(__dirname+"/../index.html", "utf8");
-let js = html.match(/<script>([\s\S]*)<\/script>/)[1];
+let js = html.match(/<script>([\s\S]*?)<\/script>/)[1];
 js = js.replace("let saveT = 0;",
   "let saveT = 0; globalThis.__api={drawPerson,makePerson,CAST,drawPersonLying};");
 
