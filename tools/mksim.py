@@ -108,6 +108,42 @@ else {
   console.log(JSON.stringify(dupWhere), JSON.stringify(overlapWhere));
 }
 
+console.log('\\n── 白白：会去沙发睡，也睡得醒 ──');
+A.saveState();
+{
+  const d=JSON.parse(globalThis.__store[A.SAVE_KEY]);
+  const b=d.people.find(p=>p.castKey==='baibai');
+  b.lying=true; b.sitting=false; b.task='nap'; b.timer=25; b.napSofa=0; b.napSeats=[[0,0],[0,1]];
+  globalThis.__store[A.SAVE_KEY]=JSON.stringify(d);
+  A.loadState();
+  console.log('读档瞬间 白白 lying =', A.people.find(p=>p.castKey==='baibai').lying);
+  run(8);
+  const bb=A.people.find(p=>p.castKey==='baibai');
+  console.log('之后 8 分钟 lying =', bb.lying, ' task =', bb.task, bb.lying?'← 失败：躺着起不来':'← 通过');
+}
+
+console.log('\\n── 搭子设定：白白粘程序员、鹿鹿粘海莉 ──');
+{
+  const tally={}; const seen={};
+  const mark=(k,f)=>{tally[k]=tally[k]||{same:0,other:0,nap:0,n:0}; tally[k][f]++;};
+  for(let i=0;i<30*60*60;i++){t+=step*1000;const f=RAF.shift();if(!f)break;f(t);
+    for(const [me,mate] of [['baibai','coder'],['lulu','haley'],['lige','haley']]){
+      const a=A.people.find(p=>p.castKey===me), b=A.people.find(p=>p.castKey===mate);
+      if(!a) continue;
+      if(a.lying){ mark(me,'nap'); mark(me,'n'); continue; }
+      if(!a.sitting||(!a.chair&&!a.seat)) continue;
+      mark(me,'n');
+      const together = !!b && ((b.chair&&a.chair&&b.chair.t===a.chair.t) ||
+                               (b.seat&&a.seat&&b.seat.sofa===a.seat.sofa));
+      mark(me, together?'same':'other');
+      if(together) seen[me]=true; } }
+  for(const k of Object.keys(tally)){ const o=tally[k];
+    const sit=o.same+o.other;
+    console.log(`${k}: 坐着的帧里 ${sit?Math.round(o.same/sit*100):0}% 和搭子同桌/同沙发`
+      + (o.nap?`，躺着 ${o.nap} 帧`:'')
+      + `  ${seen[k]?'← 通过':'← 失败：整段窗口一次都没同桌'}`); }
+}
+
 console.log('\\n── 海莉不再戴帽（含老存档里 hat=true 的情况） ──');
 A.saveState();
 const hd=JSON.parse(globalThis.__store[A.SAVE_KEY]);

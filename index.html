@@ -2131,7 +2131,7 @@ const CAST = {
     shirt: "#7fb2c4", pants: "#3d4a63", postDX: -1,
   },
   baibai: {                         // 白白：仿雪兔——过肩长发、比雪兔稍矮、一样瘦、淡紫店员服、红鸭舌帽
-    name: "白白", role: "clerk", build: "slimShort", resident: true,
+    name: "白白", role: "clerk", build: "slimShort", naps: true, buddy: "coder", resident: true,
     skin: "#f7dcc0", hair: "#5c4636", hairStyle: "long", lashes: true,
     shirt: "#9d8fc6", pants: "#3f3a55", cap: true, capColor: "#cf3a2f", postDX: 1,
   },
@@ -2158,7 +2158,7 @@ const CAST = {
     shirt: "#eec244", pants: "#3a4a63",
   },
   lulu: {                           // 鹿鹿：潮女、瘦、比白白矮、时髦短发 + 睫毛眼影、破洞牛仔裤
-    name: "鹿鹿", role: "regular", build: "petite", resident: true,
+    name: "鹿鹿", role: "regular", build: "petite", resident: true, buddy: "haley",
     skin: "#f2cba2", hair: "#1a1a1a", hairStyle: "bob", lashes: true,
     eyeShadow: "#b56a86", shirt: "#d86a8a", pants: "#4a6ba0", ripped: true,
   },
@@ -2206,6 +2206,8 @@ function makePerson(castKey) {
     mask: !!(c && c.mask),
     ripped: !!(c && c.ripped),
     postDX: c && c.postDX !== undefined ? c.postDX : 0,
+    naps: !!(c && c.naps),               // 会去沙发睡一觉
+    buddy: c ? c.buddy || null : null,   // 固定搭子：优先坐到 TA 那桌
     eyeShadow: c ? c.eyeShadow || null : null,
     skirt: c ? c.skirt || null : null,
     // 海莉这类「有时戴帽子」的，每次换班重新掷一次
@@ -2303,6 +2305,23 @@ function pickChair() {
     for (let i = 0; i < weight; i++) cands.push(rnd(free));
   }
   return cands.length ? rnd(cands) : null;
+}
+// 固定搭子：TA 已经占了某张桌的椅子，就优先坐到同一桌的空位上。
+// 只要 chair 有主就算数，不必等 TA 真坐下，否则会错过刚起身走过去的那几秒
+function buddyChair(n) {
+  if (!n.buddy) return null;
+  const mate = people.find(p => p.castKey === n.buddy && p.chair && p.state !== "away");
+  if (!mate) return null;
+  const free = mate.chair.t.chairs.filter(c => !c.by);
+  return free.length ? rnd(free) : null;
+}
+// 搭子窝在沙发上：同一张沙发还有空位就挨着坐。只是偏好，没位子就照常自己找
+function buddySeat(n) {
+  if (!n.buddy) return null;
+  const mate = people.find(p => p.castKey === n.buddy && p.seat && p.state !== "away");
+  if (!mate) return null;
+  const free = mate.seat.sofa.seats.filter(q => !q.by);
+  return free.length ? rnd(free) : null;
 }
 function pickSeat() {
   const free = SOFAS.flatMap(s => s.seats).filter(s => !s.by);
@@ -2411,7 +2430,7 @@ function update(n, dt, time) {
       break;
 
     case "toSofa": {
-      const seat = pickSeat();
+      const seat = buddySeat(n) || pickSeat();
       if (!seat) { n.state = "seek"; n.timer = 0; break; }
       const app = sofaApproach(seat);
       if (app && goTo(n, app.x, app.y)) { seat.by = n; n.seat = seat; n.state = "sitSofa"; }
@@ -2434,7 +2453,12 @@ function update(n, dt, time) {
       break;
 
     case "seek": {
-      const ch = pickChair();
+      const bs = buddySeat(n);                  // 搭子在沙发上，挨着坐
+      if (bs) {
+        const app = sofaApproach(bs);
+        if (app && goTo(n, app.x, app.y)) { bs.by = n; n.seat = bs; n.state = "sitSofa"; break; }
+      }
+      const ch = buddyChair(n) || pickChair();
       if (!ch) {
         if (!n.lounged) { n.state = "toSofa"; break; }
         n.state = "toCounter"; n.timer = 0; break;
@@ -2525,7 +2549,8 @@ function lieDown(n) {                          // 已走到沙发前
   n.py = s.y * TW + TW - 1;
   n.dir = "w"; n.lying = true; n.sitting = false;
   // 店长睡整觉，老墨改成打盹：醒着翻游戏架的时间多一些
-  n.task = "nap"; n.timer = n.role === "napper" ? ri(18, 36) : ri(45, 95);
+  n.task = "nap";
+  n.timer = n.role === "napper" ? ri(18, 36) : n.role === "clerk" ? ri(20, 40) : ri(45, 95);
 }
 function wakeUp(n) {
   n.napSeats.forEach(s => (s.by = null));
@@ -2629,36 +2654,57 @@ function updateCoder(n, dt) {
 }
 
 function updateStaff(n, dt) {
+  if (n.task === "napGo") { lieDown(n); return; }        // 走到沙发前了，躺下
+  if (n.task === "sitWith") {                            // 走到搭子那桌了，坐下陪着
+    if (!n.chair) { n.task = null; n.timer = 0; return; }
+    snapSeat(n, n.chair, n.chair.dir);
+    n.task = "chat"; n.timer = ri(18, 40);
+    return;
+  }
   if (n.timer > 0) {
-    if (n.task === "counter") {
+    if (n.lying) { if (n.emoteT <= 0 && Math.random() < dt * .10) emote(n, "note", 2.4); }
+    else if (n.task === "counter") {
       n.dir = "n";
       if (people.some(p => p.state === "atCounter") && n.emoteT <= 0 && Math.random() < dt) emote(n, "coffee", 1.8);
     } else if (n.task === "check") {
       if (n.emoteT <= 0 && Math.random() < dt * .8) emote(n, rnd(["note", "heart", "dice"]));
+    } else if (n.task === "chat") {
+      if (n.emoteT <= 0 && Math.random() < dt * .6) emote(n, rnd(["heart", "note", "think", "dice"]));
     } else if (n.task === "stock") {
       if (n.stockDir) n.dir = flatDir(n.stockDir);
       if (n.emoteT <= 0 && Math.random() < dt * .8) emote(n, "meeple");
     }
     return;
   }
-  if (n.chair) { n.chair.by = null; n.chair = null; }   // 还回巡台时占的椅子
+  // 睡醒。老存档也可能把店员存成躺着（那会儿这个位子是别的角色），一样从这里起身
+  if (n.lying) { wakeUp(n); return; }
+  // 还回巡台 / 陪坐时占的椅子
+  if (n.chair) { standAt(n, n.chair); n.chair.by = null; n.chair = null; n.sitting = false; }
   const busy = people.some(p => p.state === "atCounter" || p.state === "toCounter");
   const roll = Math.random();
   if (busy) {
     // 有客到柜台：回岗，站到人走；各占一格别叠在一起（店长另占 +1）
     if (goTo(n, STAFF_POST.x + (n.postDX || 0), STAFF_POST.y)) { n.task = "counter"; n.timer = ri(4, 7); }
     else n.timer = 2;
+  } else if (n.naps && roll < .06) {
+    // 会睡觉的店员：没人在柜台时偶尔溜去沙发眯一觉
+    if (!claimSofa(n)) n.timer = 4;
   } else if (roll < .14) {
     // 空闲时偶尔回柜台瞄一眼，很快又走 —— 别杵着
     if (goTo(n, STAFF_POST.x + (n.postDX || 0), STAFF_POST.y)) { n.task = "counter"; n.timer = ri(2, 4); }
     else n.timer = 2;
   } else if (roll < .60) {
-    // 巡台只站空椅子。以前是 rnd(t.chairs)，会直接踩到正在玩的客人身上
-    const free = TABLES.flatMap(t => t.chairs).filter(c => !c.by);
-    const c = free.length ? rnd(free) : null;
-    // 出发前就占下这把椅子：只判空再走的话，路上会被客人认领，到了就叠在一起
-    if (c && goTo(n, c.x, c.y)) { c.by = n; n.chair = c; n.task = "check"; n.timer = ri(4, 8); }
-    else n.timer = 2;
+    // 搭子正占着某张桌就过去同桌坐下，否则照常巡台。
+    // 巡台只站空椅子：以前是 rnd(t.chairs)，会直接踩到正在玩的客人身上。
+    // 两种情况都在出发前先占下椅子 —— 只判空再走的话，路上会被客人认领，到了就叠在一起
+    const mate = buddyChair(n);
+    if (mate && goTo(n, mate.x, mate.y)) { mate.by = n; n.chair = mate; n.task = "sitWith"; n.timer = 0; }
+    else {
+      const free = TABLES.flatMap(t => t.chairs).filter(c => !c.by);
+      const c = free.length ? rnd(free) : null;
+      if (c && goTo(n, c.x, c.y)) { c.by = n; n.chair = c; n.task = "check"; n.timer = ri(4, 8); }
+      else n.timer = 2;
+    }
   } else {
     const s = pickShelfSpot();
     if (s && goTo(n, s.x, s.y)) { n.task = "stock"; n.stockDir = s.dir; n.timer = ri(5, 11); }
