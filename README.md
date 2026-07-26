@@ -12,9 +12,17 @@
 ## 目录
 
 ```
-index.html      整个项目就这一个文件，没有任何外部依赖
+index.html      店本身：全部逻辑、样式、落地页都在这一个文件里
+og.png          分享卡片封面 1200×630（微信 / Twitter / Slack 抓这张）
+door.png        落地页背景，与封面同一张场景，只是没烤字
+favicon.png     浏览器标签页图标 32×32
+icon-192.png    apple-touch-icon，加到手机主屏用
+icon-512.png    大号图标备用
 tools/          离线检视工具（不影响网页运行，纯开发用）
 ```
+
+首次进站会先看到一张落地页，点「推门进店」才进店；进过一次就记在
+localStorage 里不再拦，地址后面加 `#door` 可以强制再看一次。
 
 ## 开发工具
 
@@ -29,6 +37,7 @@ node tools/scenelab.js                        # 整店一帧 scene.png
 node tools/floorlab.js                        # 地板贴图 floor.png
 node tools/counterscene.js                    # 收银台 counter.png
 node tools/check.js                           # 座位可达性 + ASCII 地图
+python3 tools/mkcover.py                      # 重画封面 og.png / door.png 与各尺寸图标
 ```
 
 `sim.js` 会顺带跑几项回归：走路一律平移、老存档缺角色要补齐、
@@ -36,4 +45,7 @@ node tools/check.js                           # 座位可达性 + ASCII 地图
 
 ## 部署
 
-GitHub Pages 直接指向仓库根目录即可，`index.html` 自带全部资源，不需要构建步骤。
+GitHub Pages 直接指向仓库根目录即可，不需要构建步骤。除 `index.html` 外只有几张
+PNG 要一起提交：分享卡片的 `og:image` 用的是绝对地址
+`https://tongyuezhubot.github.io/bbg/og.png`，换域名时记得同步改 `index.html` 里的
+`og:image` / `og:url` / `canonical` 三处。

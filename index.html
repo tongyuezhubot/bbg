@@ -3,9 +3,31 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<meta name="description" content="像素风桌游店：七位常驻角色各有作息，猫会自己溜达，进度存本地。">
+<meta name="description" content="像素风桌游店：猫会自己溜达，进度存本地。">
 <meta name="color-scheme" content="light dark">
-<title>BBG Boardgame — 桌游店</title>
+<meta name="theme-color" content="#e3e0d5" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#171512" media="(prefers-color-scheme: dark)">
+<title>BBG Boardgame — 桌游店的一天</title>
+
+<link rel="canonical" href="https://tongyuezhubot.github.io/bbg/">
+<link rel="icon" href="favicon.png" sizes="32x32" type="image/png">
+<link rel="apple-touch-icon" href="icon-192.png">
+
+<!-- 分享卡片：微信 / Twitter / Slack 等抓这几行 -->
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="BBG Boardgame">
+<meta property="og:locale" content="zh_CN">
+<meta property="og:title" content="BBG Boardgame — 桌游店的一天">
+<meta property="og:description" content="像素风桌游店">
+<meta property="og:url" content="https://tongyuezhubot.github.io/bbg/">
+<meta property="og:image" content="https://tongyuezhubot.github.io/bbg/og.png">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta property="og:image:alt" content="像素风桌游店">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="BBG Boardgame — 桌游店的一天">
+<meta name="twitter:description" content="像素风桌游店">
+<meta name="twitter:image" content="https://tongyuezhubot.github.io/bbg/og.png">
 
 <style>
   :root {
@@ -35,6 +57,68 @@
     --ground:#e3e0d5; --ink:#23201a; --ink-soft:#5c574a; --ink-faint:#8a8474;
     --rule:#b3ae9c; --amber:#b5761c; --amber-lit:#e8a33d; --frame:#6b4226;
     --shadow:rgba(35,32,26,.18);
+  }
+
+  /* ══ 落地页：推门进店 ══════════════════════════════════ */
+  .door {
+    position: fixed; inset: 0; z-index: 60;
+    display: flex; align-items: center;
+    padding: clamp(22px, 6vw, 96px);
+    background: #14100a url("door.png") center / cover no-repeat;
+    image-rendering: pixelated;
+    transition: opacity .45s ease;
+  }
+  .door[hidden] { display: none; }
+  .door.is-leaving { opacity: 0; pointer-events: none; }
+  .door::before {
+    content: ""; position: absolute; inset: 0;
+    background: linear-gradient(100deg,
+      rgba(18,13,8,.95) 0%, rgba(18,13,8,.92) 38%,
+      rgba(18,13,8,.62) 68%, rgba(18,13,8,.38) 100%);
+  }
+  @media (max-width: 720px) {
+    .door::before { background: rgba(18,13,8,.9); }
+  }
+  .door-card {
+    position: relative; max-width: min(560px, 100%);
+    color: #ded6c6; display: flex; flex-direction: column; align-items: flex-start;
+  }
+  .door-kicker {
+    font: italic 400 clamp(15px, 2vw, 20px)/1 Georgia, "Iowan Old Style", serif;
+    color: #9a907c; letter-spacing: .01em;
+  }
+  .door-title {
+    margin: 10px 0 0;
+    font: 700 clamp(38px, 7vw, 68px)/1.04 Georgia, "Iowan Old Style", serif;
+    letter-spacing: -.015em;
+  }
+  .door-title em { color: var(--amber-lit); font-style: italic; }
+  .door-sub { margin-top: 14px; font-size: clamp(13px, 1.6vw, 15px); color: #b2a894; }
+  .door-facts {
+    margin: 22px 0 0; padding: 0; list-style: none;
+    display: flex; flex-direction: column; gap: 7px;
+    font-size: clamp(12.5px, 1.5vw, 14px); color: #a49a86;
+  }
+  .door-facts li { padding-left: 18px; position: relative; }
+  .door-facts li::before {
+    content: ""; position: absolute; left: 0; top: .62em;
+    width: 6px; height: 6px; background: var(--amber);
+  }
+  .door-enter {
+    margin-top: 32px; padding: 14px 26px;
+    font: 700 15px/1 ui-monospace, "SF Mono", Menlo, monospace;
+    letter-spacing: .08em; color: #1d1610;
+    background: var(--amber-lit); border: 0;
+    box-shadow: 4px 4px 0 #7a5216; cursor: pointer;
+    transition: transform .12s ease, box-shadow .12s ease, background .12s ease;
+  }
+  .door-enter:hover { background: #ffc978; transform: translate(-1px, -1px); box-shadow: 6px 6px 0 #7a5216; }
+  .door-enter:active { transform: translate(2px, 2px); box-shadow: 1px 1px 0 #7a5216; }
+  .door-enter:focus-visible { outline: 2px solid #ffe0a8; outline-offset: 4px; }
+  .door-note { margin-top: 14px; font-size: 11.5px; letter-spacing: .1em; color: #7d7462; }
+  body.door-open { overflow: hidden; }
+  @media (prefers-reduced-motion: reduce) {
+    .door, .door-enter { transition: none; }
   }
 
   body {
@@ -95,6 +179,21 @@
 </style>
 </head>
 <body>
+
+<div class="door" id="door" hidden>
+  <div class="door-card">
+    <p class="door-kicker">Welcome to</p>
+    <p class="door-title">BBG <em>Boardgame</em></p>
+    <p class="door-sub">桌游店 · 平面图 · 营业中的一天</p>
+    <ul class="door-facts">
+      <li>顾客自己进门、挑游戏、入座开局、结账</li>
+      <li>猫会在店里溜达，偶尔上桌</li>
+      <li>进度存在本地浏览器，不用登录</li>
+    </ul>
+    <button class="door-enter" id="doorEnter" type="button">推门进店 →</button>
+    <p class="door-note">回车 / 空格也能进</p>
+  </div>
+</div>
 
 <div class="wrap">
   <header>
@@ -253,9 +352,10 @@ box(VOID.x, VOID.y, VOID.w, VOID.h);
 
 // 靠墙书架（横向）
 const shelves = [];
-const addShelf = (x, y, w) => { shelves.push({ x, y, w }); box(x, y, w, 1); };
+// wall = 靠哪面墙。"s"（贴南墙）的架子背对镜头，要整体退到人物之后画
+const addShelf = (x, y, w, wall = "n") => { shelves.push({ x, y, w, wall }); box(x, y, w, 1); };
 addShelf(2, 2, 10); addShelf(14, 2, 5); addShelf(20, 2, 8);
-addShelf(9, 26, 5); addShelf(24, 26, 13);
+addShelf(9, 26, 5, "s"); addShelf(24, 26, 13, "s");
 
 // 靠墙书架（竖向）
 const wallShelves = [];
@@ -2796,7 +2896,8 @@ function frame(now) {
   drawOuterWalls(sx, night, time);
 
   const items = [];
-  shelves.forEach(s => items.push({ y: s.y * TW + TW, d: c => drawShelf(c, s) }));
+  // 南墙书架的正面朝里、背对镜头，排序键用它的顶边，走廊上的人才不会被架子埋掉小腿
+  shelves.forEach(s => items.push({ y: s.wall === "s" ? s.y * TW - 10 : s.y * TW + TW, d: c => drawShelf(c, s) }));
   wallShelves.forEach(s => items.push({ y: (s.y + s.h) * TW, d: c => drawWallShelf(c, s) }));
   IWALL_V.forEach(w => items.push({ y: (w.y + w.h) * TW, d: c => drawIWallV(c, w) }));
   IWALL_H.forEach(w => items.push({ y: (w.y + 1) * TW, d: c => drawIWallH(c, w) }));
@@ -2822,10 +2923,11 @@ function frame(now) {
       ? (n.seat.sofa.y + n.seat.sofa.len) * TW + 1
       : n.seat.y * TW + TW - .5;
     else if (!n.lying) {
-      // 站在桌子占地范围里的人（刚从上排椅子起身 / 绕桌走）要画在桌子之前，否则腿被桌面挡没
+      // 站在桌子最后一排（南侧）的人要画在桌子之前，否则腿被桌面挡没。
+      // 注意只能覆盖南侧这一排：把北侧那排也算进来会让人踩到桌面上
       for (const t of TABLES) {
         if (n.px >= t.x * TW && n.px < (t.x + t.w) * TW &&
-            n.py >= t.y * TW - 8 && n.py <= (t.y + t.h) * TW)
+            n.py > (t.y + t.h - 1) * TW && n.py <= (t.y + t.h) * TW)
           sy = Math.max(sy, (t.y + t.h) * TW + 2);
       }
     }
@@ -2898,6 +3000,48 @@ function frame(now) {
   requestAnimationFrame(frame);
 }
 requestAnimationFrame(frame);
+})();
+</script>
+
+<script>
+/* 落地页：首次访问显示，进过一次就直接进店；#door 可强制再看一次 */
+(() => {
+  const door = document.getElementById("door");
+  if (!door) return;
+
+  const KEY = "bbg.entered";
+  const store = {
+    get() { try { return localStorage.getItem(KEY); } catch { return null; } },
+    set() { try { localStorage.setItem(KEY, "1"); } catch {} },
+  };
+
+  if (location.hash !== "#door" && store.get()) { door.remove(); return; }
+
+  door.hidden = false;
+  document.body.classList.add("door-open");
+  const btn = document.getElementById("doorEnter");
+  requestAnimationFrame(() => btn.focus({ preventScroll: true }));
+
+  let left = false;
+  const enter = () => {
+    if (left) return;
+    left = true;
+    store.set();
+    removeEventListener("keydown", onKey, true);
+    door.classList.add("is-leaving");
+    document.body.classList.remove("door-open");
+    setTimeout(() => door.remove(), 500);
+  };
+  // 捕获阶段拦下按键，免得同一下按键又被店内的快捷键接走
+  const onKey = e => {
+    if (e.key !== "Enter" && e.key !== " " && e.key !== "Escape") return;
+    e.preventDefault();
+    e.stopPropagation();
+    enter();
+  };
+
+  btn.addEventListener("click", enter);
+  addEventListener("keydown", onKey, true);
 })();
 </script>
 
