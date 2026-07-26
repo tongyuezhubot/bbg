@@ -3,7 +3,8 @@
 一个像素风的桌游店。整个店是一张 640×448 的 canvas，常驻角色各有各的作息，
 猫会自己在店里溜达，进度存在 localStorage 里，关掉网页再打开会接着演。
 
-**在线预览：** https://tongyuezhubot.github.io/bbg/
+**在线预览：** https://bbg-boardgame.pages.dev/
+（GitHub Pages 上的 https://tongyuezhubot.github.io/bbg/ 仍在跑，但 canonical 指向 pages.dev）
 
 
 角色都写在 `index.html` 的 `CAST` 表里，加一条就能加人：外观字段决定长相，
@@ -45,7 +46,20 @@ python3 tools/mkcover.py                      # 重画封面 og.png / door.png �
 
 ## 部署
 
-GitHub Pages 直接指向仓库根目录即可，不需要构建步骤。除 `index.html` 外只有几张
-PNG 要一起提交：分享卡片的 `og:image` 用的是绝对地址
-`https://tongyuezhubot.github.io/bbg/og.png`，换域名时记得同步改 `index.html` 里的
-`og:image` / `og:url` / `canonical` 三处。
+两处都是纯静态，不需要构建步骤。除 `index.html` 外还有几张 PNG 要一起提交。
+
+**GitHub Pages**：指向仓库根目录，push 即生效。
+
+**Cloudflare Pages**（主站，`bbg-boardgame.pages.dev`）：控制台的 Git 集成没接通，
+目前是 wrangler 直传，每次要手动跑：
+
+```bash
+rm -rf dist && mkdir -p dist/photo
+cp index.html *.png dist/ && cp photo/*.jpg dist/photo/
+npx wrangler@latest pages deploy dist --project-name bbg-boardgame
+```
+
+`dist/` 只是为了不把 `tools/`、`.git` 传上去，已在 .gitignore 里。
+
+分享卡片的 `og:image` 必须是绝对地址，换域名时同步改 `index.html` 里的
+`canonical` / `og:url` / `og:image` / `twitter:image` 四处。
